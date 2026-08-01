@@ -30,13 +30,13 @@ app.use(express.json())
 // Create these once in your Stripe Dashboard under Products, then paste the
 // price IDs here. Example IDs shown — replace with your real ones.
 const PLANS = {
-  grower:  { priceId: 'price_grower_monthly_19',  name: 'Grower',  amount: 1900 },
-  harvest: { priceId: 'price_harvest_monthly_49', name: 'Harvest', amount: 4900 },
+  grower:  { priceId: 'prod_UzUGciLiIrSXRP',  name: 'Grower',  amount: 1900 },
+  harvest: { priceId: 'prod_UzUHrByvmivQvy', name: 'Harvest', amount: 4900 },
 }
 
 const BOOST_PRICES = {
-  boost_7:  { priceId: 'price_boost_7days',  amount: 500,  label: '7-day boost'  },
-  boost_30: { priceId: 'price_boost_30days', amount: 2500, label: '30-day boost' },
+  boost_7:  { priceId: 'prod_UzUI7cPFS2sGaK',  amount: 500,  label: '7-day boost'  },
+  boost_30: { priceId: 'prod_UzUIxetoRg10ei', amount: 2500, label: '30-day boost' },
 }
 
 // Platform fee Homestead takes on every buyer transaction (5%)
