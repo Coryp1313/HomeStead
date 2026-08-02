@@ -17,7 +17,6 @@ import ListingCard from '../components/ListingCard'
 import CartSidebar from '../components/CartSidebar'
 import SellerDashboard from '../components/SellerDashboard'
 import NotificationPanel from '../components/NotificationPanel'
-import { startSellerOnboarding } from '../lib/stripe'
 import { LISTINGS_WITH_SELLER, SELLERS } from '../lib/data'
 
 const CATEGORIES = [
@@ -31,7 +30,7 @@ const CATEGORIES = [
 ]
 
 export default function Marketplace() {
-  const { cart, orders, user } = useApp()
+  const { cart, orders, user, logout } = useApp()
 
   // Nav state
   const [activeTab,  setActiveTab]  = useState('browse')
@@ -161,6 +160,7 @@ export default function Marketplace() {
           { key: 'ai',       icon: '✦',  label: 'AI finder'  },
           { key: 'orders',   icon: '📦', label: 'Orders'     },
           { key: 'sell',     icon: '🏪', label: 'Sell'       },
+          { key: 'account',  icon: '👤', label: user.isGuest ? 'Sign in' : (user.name?.split(' ')[0] || 'Account') },
         ].map(tab => (
           <button
             key={tab.key}
@@ -366,14 +366,12 @@ export default function Marketplace() {
                 Reach local buyers actively looking for exactly what you grow and make.
                 Set up takes under 10 minutes — Stripe handles all payments and payouts.
               </p>
-
-              {/* How it works */}
               <div style={s.howGrid}>
                 {[
                   { icon: '📝', title: 'Create your profile', desc: 'Tell buyers about your farm, your practices, and what makes your goods special.' },
-                  { icon: '💳', title: 'Connect Stripe',     desc: 'Stripe securely links your bank account. You\'ll receive payouts directly, automatically.' },
-                  { icon: '📋', title: 'List your goods',    desc: 'Add photos, prices, and availability. Listings go live after a quick review.' },
-                  { icon: '💰', title: 'Start earning',      desc: 'Buyers pay through Homestead. You get 95% deposited to your bank on a weekly schedule.' },
+                  { icon: '💳', title: 'Connect Stripe',      desc: 'Stripe securely links your bank account. You\'ll receive payouts directly, automatically.' },
+                  { icon: '📋', title: 'List your goods',     desc: 'Add photos, prices, and availability. Listings go live after a quick review.' },
+                  { icon: '💰', title: 'Start earning',       desc: 'Buyers pay through Homestead. You get 95% deposited to your bank on a weekly schedule.' },
                 ].map(step => (
                   <div key={step.title} style={s.howCard}>
                     <div style={{ fontSize: 28, marginBottom: 8 }}>{step.icon}</div>
@@ -382,22 +380,14 @@ export default function Marketplace() {
                   </div>
                 ))}
               </div>
-
               <div style={s.sellActions}>
-                <button
-                  style={s.sellCta}
-                  onClick={() => startSellerOnboarding({ sellerId: `seller_${Date.now()}`, email: user.email, businessName: '' })}
-                >
-                  Connect your bank account →
+                <button style={s.sellCta} onClick={() => window.location.href = '/seller/onboard'}>
+                  Set up your seller account →
                 </button>
-                <button
-                  style={s.sellSecondary}
-                  onClick={() => window.location.href = '/seller/plans'}
-                >
+                <button style={s.sellSecondary} onClick={() => window.location.href = '/seller/plans'}>
                   View seller plans
                 </button>
               </div>
-
               <div style={s.trustRow}>
                 <span style={s.trustItem}>🔒 Stripe-secured payments</span>
                 <span style={s.trustItem}>💸 Weekly payouts</span>
@@ -405,6 +395,100 @@ export default function Marketplace() {
                 <span style={s.trustItem}>🆓 Free to list on Sprout</span>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ACCOUNT */}
+        {activeTab === 'account' && (
+          <div style={{ maxWidth: 480 }}>
+            {/* Profile card */}
+            <div style={s.acctCard}>
+              <div style={s.acctAvatar}>
+                {(user.name || 'G').charAt(0).toUpperCase()}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 2 }}>
+                  {user.isGuest ? 'Guest' : user.name || 'Member'}
+                </div>
+                <div style={{ fontSize: 13, color: '#888' }}>{user.email || 'Browsing as guest'}</div>
+              </div>
+            </div>
+
+            {/* Guest upsell */}
+            {user.isGuest && (
+              <div style={{ ...s.acctSection, background: '#EAF3DE', border: '0.5px solid #97C459' }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: '#27500A', marginBottom: 6 }}>
+                  Create a free account to:
+                </div>
+                {['Save favourite listings', 'Track your orders', 'Message sellers directly', 'Sell your own goods'].map(b => (
+                  <div key={b} style={{ fontSize: 13, color: '#3B6D11', padding: '3px 0' }}>✓ {b}</div>
+                ))}
+                <button style={{ ...s.sellCta, marginTop: 14, display: 'block', width: '100%', textAlign: 'center', textDecoration: 'none' }}
+                  onClick={() => window.location.replace('/?signup=1')}>
+                  Create free account →
+                </button>
+              </div>
+            )}
+
+            {/* Orders */}
+            <div style={s.acctSection}>
+              <div style={s.acctSecTitle}>Order history</div>
+              {orders.length === 0 ? (
+                <div style={{ fontSize: 13, color: '#888', padding: '8px 0' }}>
+                  No orders yet. <button style={s.inlineLink} onClick={() => setActiveTab('browse')}>Browse listings →</button>
+                </div>
+              ) : orders.map(order => (
+                <div key={order.id} style={s.orderRow}>
+                  <span style={{ fontSize: 22 }}>{order.listing.emoji}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>{order.listing.name}</div>
+                    <div style={{ fontSize: 11, color: '#888' }}>{order.listing.seller?.name} · ${order.listing.price.toFixed(2)}</div>
+                  </div>
+                  <span style={s.orderStatus}>
+                    {order.status === 'awaiting_pickup' ? '🟡 Pickup pending' : '✅ Done'}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* Seller section */}
+            {!user.isGuest && (
+              <div style={s.acctSection}>
+                <div style={s.acctSecTitle}>Seller account</div>
+                {user.seller ? (
+                  <div style={{ fontSize: 13 }}>
+                    <div style={{ fontWeight: 500, marginBottom: 4 }}>{user.seller.businessName}</div>
+                    <div style={{ color: '#888', marginBottom: 10 }}>Plan: {user.seller.plan ?? 'Sprout'}</div>
+                    <button style={s.sellCta} onClick={() => setSellerOpen(true)}>Open seller dashboard →</button>
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ fontSize: 13, color: '#666', marginBottom: 10 }}>
+                      Have goods to sell? List them on Homestead and reach local buyers.
+                    </div>
+                    <button style={s.sellCta} onClick={() => setActiveTab('sell')}>Start selling →</button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Sign out */}
+            {!user.isGuest && (
+              <button
+                style={{ ...s.sellSecondary, width: '100%', marginTop: 8, color: '#A32D2D', borderColor: '#F09595' }}
+                onClick={() => { logout(); window.location.replace('/') }}
+              >
+                Sign out
+              </button>
+            )}
+            {user.isGuest && (
+              <button
+                style={{ ...s.sellSecondary, width: '100%', marginTop: 8 }}
+                onClick={() => window.location.replace('/')}
+              >
+                ← Back to sign in
+              </button>
+            )}
           </div>
         )}
 
@@ -562,6 +646,31 @@ const s = {
     borderRadius: 10,
   },
   orderStatus: { fontSize: 12, whiteSpace: 'nowrap', color: '#555' },
+
+  // Account tab
+  acctCard: {
+    background: '#fff', border: '0.5px solid rgba(0,0,0,0.09)',
+    borderRadius: 14, padding: '1.25rem',
+    display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12,
+  },
+  acctAvatar: {
+    width: 52, height: 52, borderRadius: '50%',
+    background: '#EAF3DE', color: '#27500A',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: 20, fontWeight: 600, flexShrink: 0,
+  },
+  acctSection: {
+    background: '#fff', border: '0.5px solid rgba(0,0,0,0.09)',
+    borderRadius: 14, padding: '1.25rem', marginBottom: 12,
+  },
+  acctSecTitle: {
+    fontSize: 12, fontWeight: 600, color: '#888',
+    textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12,
+  },
+  inlineLink: {
+    background: 'none', border: 'none', color: '#3B6D11',
+    cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', padding: 0,
+  },
 
   sellPage:    { maxWidth: 640, margin: '0 auto' },
   sellHero:    { textAlign: 'center', padding: '1rem 0' },
