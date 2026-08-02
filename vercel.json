@@ -1,12 +1,23 @@
 {
   "rewrites": [
-    { "source": "/(.*)", "destination": "/" }
+    { "source": "/api/connect/onboard",        "destination": "/api/connect/onboard"        },
+    { "source": "/api/connect/status",         "destination": "/api/connect/status"         },
+    { "source": "/api/connect/dashboard-link", "destination": "/api/connect/dashboard-link" },
+    { "source": "/api/subscriptions/checkout", "destination": "/api/subscriptions/checkout" },
+    { "source": "/api/subscriptions/portal",   "destination": "/api/subscriptions/portal"   },
+    { "source": "/api/checkout/create",        "destination": "/api/checkout/create"        },
+    { "source": "/api/boosts/checkout",        "destination": "/api/boosts/checkout"        },
+    { "source": "/webhook",                    "destination": "/api/webhook/index"          },
+    { "source": "/(.*)",                       "destination": "/index.html"                 }
   ],
   "headers": [
     {
       "source": "/api/(.*)",
       "headers": [
-        { "key": "Cache-Control", "value": "no-store" }
+        { "key": "Cache-Control", "value": "no-store" },
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,POST,OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type,stripe-signature" }
       ]
     }
   ]
