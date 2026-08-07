@@ -2,13 +2,48 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="Homestead — local organic goods marketplace" />
+    <meta name="theme-color" content="#173404" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Homestead" />
     <title>Homestead</title>
     <style>
       *, *::before, *::after { box-sizing: border-box; }
-      body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: #f5f5f0; }
-      #root { min-height: 100vh; }
+
+      html {
+        height: -webkit-fill-available;
+      }
+
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, sans-serif;
+        background: #f5f5f0;
+        min-height: 100vh;
+        min-height: -webkit-fill-available;
+        -webkit-text-size-adjust: 100%;
+        overflow-x: hidden;
+      }
+
+      #root {
+        min-height: 100vh;
+        min-height: -webkit-fill-available;
+      }
+
+      /* Prevent tap highlight flash on mobile */
+      * { -webkit-tap-highlight-color: transparent; }
+
+      /* Smoother scrolling on iOS */
+      * { -webkit-overflow-scrolling: touch; }
+
+      /* Prevent text selection on buttons */
+      button { -webkit-user-select: none; user-select: none; }
+
+      /* Fix input zoom on iOS — keeps font size at 16px */
+      input, select, textarea {
+        font-size: 16px !important;
+      }
     </style>
   </head>
   <body>
