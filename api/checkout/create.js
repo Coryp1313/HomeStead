@@ -1,8 +1,10 @@
 import Stripe from 'stripe'
+import { supabaseAdmin } from '../_lib/supabase.js'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
 
-const PLATFORM_FEE_PERCENT = 5
+// Free (Sprout) sellers pay a 5% fee; Grower and Harvest plans pay 0%
+const PLATFORM_FEE_PERCENT = { sprout: 5, grower: 0, harvest: 0 }
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -10,25 +12,44 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { listingId, listingName, amountCents, sellerAccountId, buyerEmail } = req.body
+    const { listingId, buyerEmail } = req.body
 
-    if (!amountCents || amountCents < 50) {
-      return res.status(400).json({ error: 'Amount must be at least $0.50' })
+    // Look up the price and seller ourselves, so nobody can change the
+    // price or payout account from their browser.
+    const { data: listing, error } = await supabaseAdmin
+      .from('listings')
+      .select('id, name, price, active, is_sample, seller:sellers(id, stripe_account_id, plan, plan_status)')
+      .eq('id', listingId)
+      .maybeSingle()
+    if (error) throw error
+
+    if (!listing || !listing.active) {
+      return res.status(404).json({ error: 'This listing is no longer available.' })
+    }
+    if (listing.is_sample) {
+      return res.status(400).json({ error: 'This is a sample listing and can\'t be purchased.' })
+    }
+    if (!listing.seller?.stripe_account_id) {
+      return res.status(400).json({ error: 'This seller hasn\'t finished setting up payouts yet.' })
     }
 
-    const platformFeeCents = Math.round(amountCents * (PLATFORM_FEE_PERCENT / 100))
+    const amountCents      = Math.round(Number(listing.price) * 100)
+    const paidPlanActive   = ['active', 'trialing'].includes(listing.seller.plan_status)
+    const feePercent       = paidPlanActive ? (PLATFORM_FEE_PERCENT[listing.seller.plan] ?? 5) : 5
+    const platformFeeCents = Math.round(amountCents * (feePercent / 100))
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount:   amountCents,
       currency: 'usd',
       receipt_email: buyerEmail,
       transfer_data: {
-        destination: sellerAccountId,
+        destination: listing.seller.stripe_account_id,
       },
-      application_fee_amount: platformFeeCents,
+      ...(platformFeeCents > 0 && { application_fee_amount: platformFeeCents }),
       metadata: {
-        listing_id:   listingId,
-        listing_name: listingName,
+        listing_id:   listing.id,
+        listing_name: listing.name,
+        seller_id:    listing.seller.id,
       },
     })
 

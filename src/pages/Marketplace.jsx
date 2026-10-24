@@ -17,7 +17,7 @@ import ListingCard from '../components/ListingCard'
 import CartSidebar from '../components/CartSidebar'
 import SellerDashboard from '../components/SellerDashboard'
 import NotificationPanel from '../components/NotificationPanel'
-import { LISTINGS_WITH_SELLER, SELLERS } from '../lib/data'
+import AddListing from '../components/AddListing'
 
 const CATEGORIES = [
   { key: 'all',      label: 'All goods',     icon: '▦' },
@@ -30,12 +30,14 @@ const CATEGORIES = [
 ]
 
 export default function Marketplace() {
-  const { cart, orders, user, logout } = useApp()
+  const { cart, orders, user, logout, leaveGuest, listings: allListings, listingsLoading, listingsError } = useApp()
+  const listings = useMemo(() => allListings.filter(l => l.active), [allListings])
 
   // Nav state
   const [activeTab,  setActiveTab]  = useState('browse')
   const [cartOpen,   setCartOpen]   = useState(false)
   const [sellerOpen, setSellerOpen] = useState(false)
+  const [addOpen,    setAddOpen]    = useState(false)
 
   // Browse filters
   const [category, setCategory]   = useState('all')
@@ -49,7 +51,7 @@ export default function Marketplace() {
   // ── Derived data ─────────────────────────────────────────────────────────
 
   const filteredListings = useMemo(() => {
-    let items = LISTINGS_WITH_SELLER
+    let items = listings
     if (category !== 'all') items = items.filter(l => l.category === category)
     if (search) {
       const q = search.toLowerCase()
@@ -60,11 +62,15 @@ export default function Marketplace() {
       )
     }
     // Boosted listings float to top
-    return [...items].sort((a, b) => (b.boosted ? 1 : 0) - (a.boosted ? 1 : 0))
-  }, [category, search])
+    // Boosted first, then real listings ahead of samples
+    return [...items].sort((a, b) =>
+      ((b.boosted ? 1 : 0) - (a.boosted ? 1 : 0)) ||
+      ((a.isSample ? 1 : 0) - (b.isSample ? 1 : 0))
+    )
+  }, [listings, category, search])
 
   const aiResults = useMemo(() => {
-    return LISTINGS_WITH_SELLER
+    return listings
       .filter(l =>
         (aiCat === 'all' || l.category === aiCat) &&
         (l.seller?.dist ?? 99) <= maxDist &&
@@ -72,7 +78,7 @@ export default function Marketplace() {
       )
       .sort((a, b) => (a.seller?.dist ?? 99) - (b.seller?.dist ?? 99))
       .slice(0, 6)
-  }, [aiCat, maxDist, maxPrice])
+  }, [listings, aiCat, maxDist, maxPrice])
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -198,7 +204,17 @@ export default function Marketplace() {
               <span style={s.rowSub}>Nearest first · Boosted pinned top</span>
             </div>
 
-            {filteredListings.length === 0 ? (
+            {listingsError ? (
+              <div style={s.empty}>
+                <div style={{ fontSize: 32 }}>⚠️</div>
+                <div style={{ fontWeight: 500, marginTop: 8 }}>{listingsError}</div>
+              </div>
+            ) : listingsLoading ? (
+              <div style={s.empty}>
+                <div style={{ fontSize: 32 }}>🌾</div>
+                <div style={{ fontSize: 13, color: '#888', marginTop: 8 }}>Loading listings…</div>
+              </div>
+            ) : filteredListings.length === 0 ? (
               <div style={s.empty}>
                 <div style={{ fontSize: 32 }}>🔍</div>
                 <div style={{ fontWeight: 500, marginTop: 8 }}>No listings found</div>
@@ -381,9 +397,20 @@ export default function Marketplace() {
                 ))}
               </div>
               <div style={s.sellActions}>
-                <button style={s.sellCta} onClick={() => window.location.href = '/seller/onboard'}>
-                  Set up your seller account →
-                </button>
+                {user.seller ? (
+                  <>
+                    <button style={s.sellCta} onClick={() => setAddOpen(true)}>
+                      + Add a listing
+                    </button>
+                    <button style={s.sellSecondary} onClick={() => setSellerOpen(true)}>
+                      Open seller dashboard
+                    </button>
+                  </>
+                ) : (
+                  <button style={s.sellCta} onClick={() => window.location.href = '/seller/onboard'}>
+                    Set up your seller account →
+                  </button>
+                )}
                 <button style={s.sellSecondary} onClick={() => window.location.href = '/seller/plans'}>
                   View seller plans
                 </button>
@@ -424,7 +451,7 @@ export default function Marketplace() {
                   <div key={b} style={{ fontSize: 13, color: '#3B6D11', padding: '3px 0' }}>✓ {b}</div>
                 ))}
                 <button style={{ ...s.sellCta, marginTop: 14, display: 'block', width: '100%', textAlign: 'center', textDecoration: 'none' }}
-                  onClick={() => window.location.replace('/?signup=1')}>
+                  onClick={() => leaveGuest('signup')}>
                   Create free account →
                 </button>
               </div>
@@ -476,7 +503,7 @@ export default function Marketplace() {
             {!user.isGuest && (
               <button
                 style={{ ...s.sellSecondary, width: '100%', marginTop: 8, color: '#A32D2D', borderColor: '#F09595' }}
-                onClick={() => { logout(); window.location.replace('/') }}
+                onClick={async () => { await logout(); window.location.replace('/') }}
               >
                 Sign out
               </button>
@@ -484,7 +511,7 @@ export default function Marketplace() {
             {user.isGuest && (
               <button
                 style={{ ...s.sellSecondary, width: '100%', marginTop: 8 }}
-                onClick={() => window.location.replace('/')}
+                onClick={() => leaveGuest('login')}
               >
                 ← Back to sign in
               </button>
@@ -496,7 +523,13 @@ export default function Marketplace() {
 
       {/* ── Overlays ───────────────────────────────────────────────────────── */}
       <CartSidebar open={cartOpen} onClose={() => setCartOpen(false)} />
-      {sellerOpen && <SellerDashboard onClose={() => setSellerOpen(false)} />}
+      {sellerOpen && (
+        <SellerDashboard
+          onClose={() => setSellerOpen(false)}
+          onAddListing={() => { setSellerOpen(false); setAddOpen(true) }}
+        />
+      )}
+      {addOpen && <AddListing onClose={() => setAddOpen(false)} />}
 
     </div>
   )

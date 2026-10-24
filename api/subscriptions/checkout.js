@@ -1,4 +1,5 @@
 import Stripe from 'stripe'
+import { getUserFromRequest, getSellerForUser } from '../_lib/supabase.js'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
 
@@ -13,7 +14,14 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { plan, sellerId, email } = req.body
+    const user = await getUserFromRequest(req)
+    if (!user) return res.status(401).json({ error: 'Please sign in first.' })
+
+    const seller = await getSellerForUser(user.id)
+    if (!seller) return res.status(400).json({ error: 'Set up your seller account first.' })
+
+    const { plan } = req.body
+    const sellerId     = seller.id
     const selectedPlan = PLANS[plan]
 
     if (!selectedPlan) {
@@ -28,7 +36,9 @@ export default async function handler(req, res) {
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
-      customer_email: email,
+      ...(seller.stripe_customer_id
+        ? { customer: seller.stripe_customer_id }
+        : { customer_email: user.email }),
       line_items: [{ price: selectedPlan.priceId, quantity: 1 }],
       success_url: `${process.env.VITE_APP_URL}/seller/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url:  `${process.env.VITE_APP_URL}/seller/plans`,
