@@ -1,4 +1,5 @@
 import Stripe from 'stripe'
+import { supabaseAdmin, getUserFromRequest, getSellerForUser } from '../_lib/supabase.js'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
 
@@ -13,8 +14,24 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { boostType, listingId, sellerId } = req.body
-    const boost = BOOST_PRICES[boostType]
+    const user = await getUserFromRequest(req)
+    if (!user) return res.status(401).json({ error: 'Please sign in first.' })
+
+    const seller = await getSellerForUser(user.id)
+    if (!seller) return res.status(400).json({ error: 'Set up your seller account first.' })
+
+    const { boostType, listingId } = req.body
+    const sellerId = seller.id
+    const boost    = BOOST_PRICES[boostType]
+
+    // Make sure the listing being boosted belongs to this seller
+    const { data: listing } = await supabaseAdmin
+      .from('listings')
+      .select('id')
+      .eq('id', listingId)
+      .eq('seller_id', sellerId)
+      .maybeSingle()
+    if (!listing) return res.status(404).json({ error: 'Listing not found.' })
 
     if (!boost) {
       return res.status(400).json({ error: 'Invalid boost type. Must be "boost_7" or "boost_30".' })
@@ -35,7 +52,7 @@ export default async function handler(req, res) {
       mode: 'payment',
       line_items: [lineItem],
       success_url: `${process.env.VITE_APP_URL}/seller/boost/success?listing=${listingId}`,
-      cancel_url:  `${process.env.VITE_APP_URL}/seller/listings`,
+      cancel_url:  `${process.env.VITE_APP_URL}/`,
       metadata: { listing_id: listingId, seller_id: sellerId, boost_type: boostType },
     })
 

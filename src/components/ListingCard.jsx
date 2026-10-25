@@ -3,6 +3,7 @@
  *
  * Guests see "Sign up to buy" which opens a friendly prompt instead of
  * a dead checkout. Members get the real Stripe checkout flow.
+ * Sample listings (the demo farms) show a "Sample" label and can't be bought.
  */
 
 import { useState } from 'react'
@@ -17,7 +18,7 @@ const BG = {
 }
 
 export default function ListingCard({ listing }) {
-  const { user, addOrder, showToast } = useApp()
+  const { user, addOrder, showToast, leaveGuest } = useApp()
 
   const [checkoutOpen, setCheckoutOpen] = useState(false)
   const [guestPrompt, setGuestPrompt]   = useState(false)
@@ -28,6 +29,7 @@ export default function ListingCard({ listing }) {
 
   function handleBuy(e) {
     e.stopPropagation()
+    if (listing.isSample) return
     if (isGuest) {
       setGuestPrompt(true)
       return
@@ -53,9 +55,13 @@ export default function ListingCard({ listing }) {
     <>
       <div style={s.card}>
         <div style={{ ...s.thumb, background: BG[listing.bg] || '#EAF3DE' }}>
-          <span style={{ fontSize: 38 }}>{listing.emoji}</span>
+          {listing.photoUrl
+            ? <img src={listing.photoUrl} alt={listing.name} style={s.photo} loading="lazy" />
+            : <span style={{ fontSize: 38 }}>{listing.emoji}</span>}
 
-          {listing.boosted && <span style={s.boostBadge}>Boosted</span>}
+          {listing.isSample
+            ? <span style={s.sampleBadge}>Sample</span>
+            : listing.boosted && <span style={s.boostBadge}>Boosted</span>}
 
           <button
             style={{ ...s.favBtn, color: faved ? '#E24B4A' : '#bbb' }}
@@ -83,11 +89,17 @@ export default function ListingCard({ listing }) {
               <div style={s.price}>${listing.price.toFixed(2)}</div>
               <div style={s.unit}>{listing.unit}</div>
             </div>
-            <div style={s.dist}>📍 {listing.seller?.dist} mi</div>
+            <div style={s.dist}>
+              📍 {listing.seller?.dist != null ? `${listing.seller.dist} mi` : listing.seller?.location}
+            </div>
           </div>
 
           <div style={{ marginTop: 'auto' }}>
-            {ordered ? (
+            {listing.isSample ? (
+              <div style={s.sampleBtn} title="Sample listings show what Homestead looks like with farms on it">
+                Sample listing
+              </div>
+            ) : ordered ? (
               <div style={s.orderedBadge}>✓ Ordered</div>
             ) : (
               <button style={isGuest ? s.guestBtn : s.buyBtn} onClick={handleBuy}>
@@ -105,8 +117,10 @@ export default function ListingCard({ listing }) {
           onClick={e => e.target === e.currentTarget && setGuestPrompt(false)}
         >
           <div style={s.promptCard}>
-            <div style={{ ...s.promptThumb, background: BG[listing.bg] || '#EAF3DE' }}>
-              {listing.emoji}
+            <div style={{ ...s.promptThumb, background: BG[listing.bg] || '#EAF3DE', overflow: 'hidden' }}>
+              {listing.photoUrl
+                ? <img src={listing.photoUrl} alt="" style={s.photo} />
+                : listing.emoji}
             </div>
             <h3 style={s.promptTitle}>Create a free account to buy</h3>
             <p style={s.promptSub}>
@@ -128,7 +142,7 @@ export default function ListingCard({ listing }) {
 
             <button
               style={s.promptCta}
-              onClick={() => { localStorage.removeItem('homestead_user'); window.location.replace('/') }}
+              onClick={() => leaveGuest('signup')}
             >
               Create free account →
             </button>
@@ -167,6 +181,13 @@ const s = {
     height: 100, display: 'flex', alignItems: 'center',
     justifyContent: 'center', position: 'relative', flexShrink: 0,
   },
+  photo: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
+  sampleBadge: {
+    position: 'absolute', top: 8, left: 8,
+    background: 'rgba(255,255,255,0.9)', color: '#666',
+    fontSize: 9, fontWeight: 600, padding: '2px 7px',
+    borderRadius: 999, letterSpacing: 0.4, border: '0.5px solid rgba(0,0,0,0.12)',
+  },
   boostBadge: {
     position: 'absolute', top: 8, left: 8,
     background: '#534AB7', color: '#EEEDFE',
@@ -201,6 +222,11 @@ const s = {
     width: '100%', padding: '8px', background: '#EAF3DE', color: '#27500A',
     border: '0.5px solid #97C459', borderRadius: 8, fontSize: 13, fontWeight: 500,
     cursor: 'pointer', fontFamily: 'inherit',
+  },
+  sampleBtn: {
+    width: '100%', padding: '8px', background: '#f4f4f0', color: '#999',
+    border: '0.5px dashed rgba(0,0,0,0.15)', borderRadius: 8, fontSize: 12,
+    textAlign: 'center', boxSizing: 'border-box',
   },
   orderedBadge: {
     width: '100%', padding: '8px', background: '#EAF3DE', color: '#27500A',

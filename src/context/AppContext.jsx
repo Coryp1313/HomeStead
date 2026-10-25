@@ -1,13 +1,15 @@
 /**
- * Homestead — App Context (with localStorage session persistence)
+ * Homestead — App Context
  *
- * Fixes the blank dashboard by persisting seller session in localStorage
- * so the dashboard stays populated after sign-up and page refresh.
+ * Accounts and listings now live in Supabase (see supabase/schema.sql).
+ * Supabase keeps people signed in across visits on its own.
  *
- * Also stores cart and orders across sessions.
+ * Cart, orders and notifications are still kept in this browser's
+ * localStorage for now.
  */
 
 import { createContext, useContext, useState, useCallback, useEffect } from 'react'
+import { supabase, toListing, toSeller, LISTING_SELECT } from '../lib/supabase'
 
 const AppContext = createContext(null)
 
@@ -28,16 +30,21 @@ function clear(key) {
   try { localStorage.removeItem('homestead_' + key) } catch {}
 }
 
+const SIGNED_OUT = { id: null, name: '', email: '', seller: null }
+const GUEST      = { id: 'guest', name: 'Guest', email: '', seller: null, isGuest: true }
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function AppProvider({ children }) {
-  // User — persisted so dashboard survives page refresh
-  const [user, setUserRaw] = useState(() => load('user', {
-    id:     null,
-    name:   '',
-    email:  '',
-    seller: null,   // populated after seller onboarding completes
-  }))
+  // Signed-in account (or guest / signed out). authReady is false until
+  // Supabase has told us whether someone is already signed in.
+  const [user, setUser]           = useState(() => load('guest', false) ? GUEST : SIGNED_OUT)
+  const [authReady, setAuthReady] = useState(false)
+
+  // Every active listing in the marketplace, from the database
+  const [listings, setListings]           = useState([])
+  const [listingsLoading, setListingsLoading] = useState(true)
+  const [listingsError, setListingsError] = useState(null)
 
   // Cart — persisted so items survive refresh
   const [cart, setCartRaw] = useState(() => load('cart', []))
@@ -48,12 +55,14 @@ export function AppProvider({ children }) {
   // Notifications — persisted
   const [notifications, setNotificationsRaw] = useState(() => load('notifications', []))
 
+  // True after someone clicks a "reset your password" email link
+  const [passwordRecovery, setPasswordRecovery] = useState(false)
+
   // Toast
   const [toast, setToast] = useState(null)
 
   // ── Persist helpers ─────────────────────────────────────────────────────────
 
-  function setUser(u) { setUserRaw(u); save('user', u) }
   function setCart(fn) {
     setCartRaw(prev => {
       const next = typeof fn === 'function' ? fn(prev) : fn
@@ -76,67 +85,154 @@ export function AppProvider({ children }) {
     })
   }
 
-  // ── Auth helpers ────────────────────────────────────────────────────────────
+  // ── Accounts ────────────────────────────────────────────────────────────────
 
   /**
-   * Call this after the seller onboarding form is submitted.
-   * Saves their name, email, and sellerId so the dashboard
-   * shows their info immediately after Stripe redirects back.
+   * Loads the signed-in person's profile and seller row (if they sell).
    */
-  const registerSeller = useCallback(({ name, email, sellerId, stripeAccountId, businessName }) => {
-    const updated = {
-      id:    sellerId,
-      name,
-      email,
-      seller: {
-        id:              sellerId,
-        businessName,
-        stripeAccountId: stripeAccountId ?? null,
-        plan:            'sprout',
-        planStatus:      'active',
-        stripeCustomerId: null,
-        joinedAt:        new Date().toISOString(),
-      }
+  const loadAccount = useCallback(async (authUser) => {
+    if (!authUser) {
+      setUser(load('guest', false) ? GUEST : SIGNED_OUT)
+      return
     }
-    setUser(updated)
-    return updated
+    const [{ data: profile }, { data: sellerRow }] = await Promise.all([
+      supabase.from('profiles').select('name, email').eq('id', authUser.id).maybeSingle(),
+      supabase.from('sellers').select('*').eq('user_id', authUser.id).maybeSingle(),
+    ])
+    clear('guest')
+    setUser({
+      id:     authUser.id,
+      name:   profile?.name || authUser.user_metadata?.name || authUser.email.split('@')[0],
+      email:  authUser.email,
+      seller: toSeller(sellerRow),
+    })
   }, [])
 
-  /**
-   * Call this after a subscription checkout succeeds
-   * (e.g. on the /seller/subscription/success page).
-   */
-  const upgradePlan = useCallback((plan, stripeCustomerId) => {
-    setUser(u => {
-      const updated = {
-        ...u,
-        seller: { ...u.seller, plan, planStatus: 'trialing', stripeCustomerId }
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data }) => {
+      await loadAccount(data.session?.user ?? null)
+      setAuthReady(true)
+    })
+
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true)
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
+        // Run outside the auth callback, as Supabase recommends
+        setTimeout(() => loadAccount(session?.user ?? null), 0)
       }
-      save('user', updated)
-      return updated
     })
-  }, [])
+    return () => sub.subscription.unsubscribe()
+  }, [loadAccount])
 
   /**
-   * Update the seller's Stripe account ID after onboarding completes.
+   * Creates an account. If email confirmation is turned on in Supabase,
+   * there's no session yet and the person must click the link we email them.
    */
-  const setStripeAccountId = useCallback((stripeAccountId) => {
-    setUser(u => {
-      const updated = { ...u, seller: { ...u.seller, stripeAccountId } }
-      save('user', updated)
-      return updated
+  const signUp = useCallback(async ({ name, email, password }) => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { name },
+        emailRedirectTo: window.location.origin,
+      },
     })
+    if (error) throw error
+    return { needsConfirmation: !data.session }
   }, [])
 
-  const logout = useCallback(() => {
-    clear('user')
+  const signIn = useCallback(async ({ email, password }) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) throw error
+  }, [])
+
+  const resetPassword = useCallback(async (email) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    })
+    if (error) throw error
+  }, [])
+
+  const enterAsGuest = useCallback(() => {
+    save('guest', true)
+    setUser(GUEST)
+  }, [])
+
+  /** Leaves guest mode and goes back to the landing page to sign up / log in */
+  const leaveGuest = useCallback((mode = 'signup') => {
+    clear('guest')
+    window.location.replace(`/?${mode}=1`)
+  }, [])
+
+  /** Re-reads the seller row, e.g. after onboarding or a plan change */
+  const refreshSeller = useCallback(async () => {
+    const { data } = await supabase.auth.getUser()
+    await loadAccount(data.user ?? null)
+  }, [loadAccount])
+
+  const logout = useCallback(async () => {
+    await supabase.auth.signOut()
+    clear('guest')
     clear('cart')
     clear('orders')
     clear('notifications')
-    setUserRaw({ id: null, name: '', email: '', seller: null })
+    setUser(SIGNED_OUT)
     setCartRaw([])
     setOrdersRaw([])
     setNotificationsRaw([])
+  }, [])
+
+  // ── Listings ────────────────────────────────────────────────────────────────
+
+  const reloadListings = useCallback(async () => {
+    setListingsError(null)
+    const { data, error } = await supabase
+      .from('listings')
+      .select(LISTING_SELECT)
+      .order('created_at', { ascending: false })
+    if (error) {
+      console.error('Could not load listings:', error)
+      setListingsError('Could not load listings. Please refresh the page.')
+    } else {
+      setListings(data.map(toListing))
+    }
+    setListingsLoading(false)
+  }, [])
+
+  useEffect(() => { reloadListings() }, [reloadListings, user.id])
+
+  /**
+   * Adds a listing for the signed-in seller. `fields` uses database names
+   * (name, price, unit, category, ...).
+   */
+  const addListing = useCallback(async (fields) => {
+    if (!user.seller) throw new Error('Set up your seller account first.')
+    const { data, error } = await supabase
+      .from('listings')
+      .insert({ ...fields, seller_id: user.seller.id })
+      .select(LISTING_SELECT)
+      .single()
+    if (error) throw error
+    setListings(ls => [toListing(data), ...ls])
+    return toListing(data)
+  }, [user.seller])
+
+  const updateListing = useCallback(async (listingId, fields) => {
+    const { data, error } = await supabase
+      .from('listings')
+      .update(fields)
+      .eq('id', listingId)
+      .select(LISTING_SELECT)
+      .single()
+    if (error) throw error
+    setListings(ls => ls.map(l => l.id === listingId ? toListing(data) : l))
+  }, [])
+
+  const deleteListing = useCallback(async (listingId) => {
+    const { error } = await supabase.from('listings').delete().eq('id', listingId)
+    if (error) throw error
+    setListings(ls => ls.filter(l => l.id !== listingId))
+    setCart(c => c.filter(i => i.id !== listingId))
   }, [])
 
   // ── Cart helpers ────────────────────────────────────────────────────────────
@@ -205,13 +301,21 @@ export function AppProvider({ children }) {
 
   return (
     <AppContext.Provider value={{
-      user, setUser, registerSeller, upgradePlan, setStripeAccountId, logout,
+      user, authReady, signUp, signIn, resetPassword, logout,
+      enterAsGuest, leaveGuest, refreshSeller,
+      listings, listingsLoading, listingsError, reloadListings,
+      addListing, updateListing, deleteListing,
       cart, addToCart, removeFromCart, clearCart,
       orders, addOrder,
       notifications, addNotification, markAllRead, unreadCount,
       toast, showToast,
     }}>
       {children}
+      {passwordRecovery && (
+        <NewPasswordModal
+          onDone={() => { setPasswordRecovery(false); showToast('Password updated', 'success') }}
+        />
+      )}
       {toast && <Toast toast={toast} />}
     </AppContext.Provider>
   )
@@ -221,6 +325,39 @@ export function useApp() {
   const ctx = useContext(AppContext)
   if (!ctx) throw new Error('useApp must be used within AppProvider')
   return ctx
+}
+
+function NewPasswordModal({ onDone }) {
+  const [password, setPassword] = useState('')
+  const [error, setError]       = useState(null)
+  const [saving, setSaving]     = useState(false)
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    if (password.length < 6) { setError('Password must be at least 6 characters.'); return }
+    setSaving(true)
+    const { error } = await supabase.auth.updateUser({ password })
+    setSaving(false)
+    if (error) setError(error.message)
+    else onDone()
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(13,33,3,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '1rem' }}>
+      <form onSubmit={handleSubmit} style={{ background: '#fff', borderRadius: 18, padding: '1.75rem', maxWidth: 380, width: '100%', fontFamily: 'system-ui, sans-serif' }}>
+        <h2 style={{ fontSize: 18, fontWeight: 500, margin: '0 0 6px' }}>Choose a new password</h2>
+        <p style={{ fontSize: 13, color: '#777', margin: '0 0 16px' }}>You'll use this to log in from now on.</p>
+        <input type="password" autoFocus value={password} onChange={e => { setPassword(e.target.value); setError(null) }}
+          placeholder="At least 6 characters"
+          style={{ width: '100%', padding: '12px 13px', borderRadius: 9, border: '0.5px solid rgba(0,0,0,.2)', boxSizing: 'border-box', fontFamily: 'inherit', marginBottom: 12 }} />
+        {error && <div style={{ background: '#FCEBEB', color: '#A32D2D', borderRadius: 8, padding: '9px 13px', fontSize: 13, marginBottom: 12 }}>{error}</div>}
+        <button type="submit" disabled={saving}
+          style={{ width: '100%', padding: '13px', background: '#3B6D11', color: '#EAF3DE', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
+          {saving ? 'Saving…' : 'Save new password'}
+        </button>
+      </form>
+    </div>
+  )
 }
 
 function Toast({ toast }) {
