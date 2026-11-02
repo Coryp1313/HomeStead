@@ -15,7 +15,34 @@ if (!url || !anonKey) {
   console.error('Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY — add them in Vercel → Settings → Environment Variables.')
 }
 
+export const supabaseConfigured = !!(url && anonKey)
+
+// Which Supabase project this build talks to (the address isn't secret)
+export const supabaseHost = (() => { try { return new URL(url).host } catch { return url || 'not set' } })()
+
 export const supabase = createClient(url ?? 'http://localhost', anonKey ?? 'missing-key')
+
+/**
+ * Turns a failed listings load into a plain-language reason, so a setup
+ * problem can be spotted from the page itself.
+ */
+export function explainLoadError(error) {
+  const msg  = error?.message ?? String(error ?? '')
+  const code = error?.code ?? ''
+  if (!supabaseConfigured) {
+    return 'The Supabase keys aren\'t in this build. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel, then redeploy.'
+  }
+  if (code === '42P01' || code === 'PGRST205' || /does not exist|could not find the table/i.test(msg)) {
+    return 'The listings table wasn\'t found. Run supabase/schema.sql in this Supabase project\'s SQL Editor.'
+  }
+  if (/invalid api key|jwt|apikey|no api key/i.test(msg) || code === 'PGRST301') {
+    return 'Supabase rejected the key. Check that VITE_SUPABASE_ANON_KEY is the publishable/anon key from this project.'
+  }
+  if (/failed to fetch|networkerror|load failed/i.test(msg)) {
+    return 'Couldn\'t reach Supabase. Check that VITE_SUPABASE_URL is the Project URL (https://….supabase.co).'
+  }
+  return msg || 'Unknown error'
+}
 
 const BOOST_ACTIVE = l => l.boosted && (!l.boost_expires_at || new Date(l.boost_expires_at) > new Date())
 

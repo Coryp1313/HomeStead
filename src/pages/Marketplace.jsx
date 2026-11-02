@@ -207,7 +207,10 @@ export default function Marketplace() {
             {listingsError ? (
               <div style={s.empty}>
                 <div style={{ fontSize: 32 }}>⚠️</div>
-                <div style={{ fontWeight: 500, marginTop: 8 }}>{listingsError}</div>
+                <div style={{ fontWeight: 500, marginTop: 8 }}>{listingsError.message}</div>
+                <div style={{ fontSize: 12, color: '#888', marginTop: 6, maxWidth: 460, marginInline: 'auto', lineHeight: 1.5 }}>
+                  {listingsError.detail}
+                </div>
               </div>
             ) : listingsLoading ? (
               <div style={s.empty}>

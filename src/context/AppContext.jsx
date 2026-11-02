@@ -9,7 +9,7 @@
  */
 
 import { createContext, useContext, useState, useCallback, useEffect } from 'react'
-import { supabase, toListing, toSeller, LISTING_SELECT } from '../lib/supabase'
+import { supabase, toListing, toSeller, LISTING_SELECT, explainLoadError, supabaseHost } from '../lib/supabase'
 
 const AppContext = createContext(null)
 
@@ -186,13 +186,21 @@ export function AppProvider({ children }) {
 
   const reloadListings = useCallback(async () => {
     setListingsError(null)
-    const { data, error } = await supabase
-      .from('listings')
-      .select(LISTING_SELECT)
-      .order('created_at', { ascending: false })
+    let data, error
+    try {
+      ({ data, error } = await supabase
+        .from('listings')
+        .select(LISTING_SELECT)
+        .order('created_at', { ascending: false }))
+    } catch (err) {
+      error = err
+    }
     if (error) {
       console.error('Could not load listings:', error)
-      setListingsError('Could not load listings. Please refresh the page.')
+      setListingsError({
+        message: 'Could not load listings.',
+        detail:  `${explainLoadError(error)} (Project: ${supabaseHost})`,
+      })
     } else {
       setListings(data.map(toListing))
     }
