@@ -71,6 +71,11 @@ This is the address that "confirm your email" and "reset your password" links se
 
    The two `VITE_` ones go to the browser. The other two stay on the server only.
 
+3. **Vercel only reads these keys while it builds the site.** A build that ran before you added
+   them won't have them, so the page says "Supabase keys aren't in this build". To fix that, build
+   again from the **newest** code: Deployments → the most recent deployment for the branch → ⋯ →
+   **Redeploy**. Redeploying an older deployment rebuilds that older code.
+
 ## 6. Test the preview before going live
 
 When the update is opened as a pull request on GitHub, Vercel builds a **preview** copy of the site
