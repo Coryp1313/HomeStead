@@ -134,6 +134,24 @@ grant  update (name, description, price, unit, category, emoji, bg, tags, photo_
   on public.listings to authenticated;
 
 
+-- ── Table permissions ───────────────────────────────────────────────────────
+-- Newer Supabase projects don't give the website any access to new tables
+-- until it's granted here. Row Level Security above still decides which rows.
+
+grant usage on schema public to anon, authenticated, service_role;
+
+grant select                          on public.profiles to authenticated;
+grant update (name)                   on public.profiles to authenticated;
+
+grant select                          on public.sellers  to anon, authenticated;
+
+grant select                          on public.listings to anon, authenticated;
+grant delete                          on public.listings to authenticated;
+
+-- Our Vercel functions (service role key) manage everything
+grant all on public.profiles, public.sellers, public.listings to service_role;
+
+
 -- ── Listing photos (Storage) ────────────────────────────────────────────────
 -- Public bucket: anyone can view photos. Signed-in users can only upload
 -- into a folder named after their own account ID.
