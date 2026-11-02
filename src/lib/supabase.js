@@ -8,11 +8,18 @@
 
 import { createClient } from '@supabase/supabase-js'
 
-const url     = import.meta.env.VITE_SUPABASE_URL
+// Only the https://xxxx.supabase.co part is wanted. Supabase's dashboard sometimes
+// shows the address with /rest/v1 on the end, so strip any extra path.
+const url     = cleanUrl(import.meta.env.VITE_SUPABASE_URL)
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 if (!url || !anonKey) {
   console.error('Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY — add them in Vercel → Settings → Environment Variables.')
+}
+
+function cleanUrl(raw) {
+  if (!raw) return raw
+  try { return new URL(raw.trim()).origin } catch { return raw.trim() }
 }
 
 export const supabaseConfigured = !!(url && anonKey)

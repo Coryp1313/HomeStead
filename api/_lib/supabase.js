@@ -8,8 +8,14 @@
 
 import { createClient } from '@supabase/supabase-js'
 
+// Only the https://xxxx.supabase.co part is wanted; drop any /rest/v1 etc.
+function cleanUrl(raw) {
+  if (!raw) return raw
+  try { return new URL(raw.trim()).origin } catch { return raw.trim() }
+}
+
 export const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL,
+  cleanUrl(process.env.SUPABASE_URL),
   process.env.SUPABASE_SERVICE_ROLE_KEY,
   { auth: { persistSession: false } }
 )
