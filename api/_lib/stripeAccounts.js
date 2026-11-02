@@ -10,7 +10,8 @@
  * v1 endpoints and answers in the v1 shape.
  */
 
-const STRIPE_V2_VERSION = '2026-10-28.endive'
+// Express dashboard + Stripe-managed risk needs Stripe's preview API version
+const STRIPE_V2_VERSION = '2026-10-28.preview'
 
 export async function createExpressAccount({ email, businessName, sellerId }) {
   const res = await fetch('https://api.stripe.com/v2/core/accounts', {
@@ -25,8 +26,10 @@ export async function createExpressAccount({ email, businessName, sellerId }) {
       contact_email: email,
       identity:      { country: 'US' },
       dashboard:     'express',
+      // Stripe covers fraud losses and collects its own fees ("managed risk"),
+      // so Homestead isn't on the hook if a seller's account goes negative.
       defaults: {
-        responsibilities: { fees_collector: 'application', losses_collector: 'application' },
+        responsibilities: { fees_collector: 'stripe', losses_collector: 'stripe' },
       },
       configuration: {
         merchant:  { capabilities: { card_payments: { requested: true } } },
