@@ -1,5 +1,5 @@
 import Stripe from 'stripe'
-import { getUserFromRequest, getSellerForUser } from '../_lib/supabase.js'
+import { getUserFromRequest, getSellerForUser, appUrl } from '../_lib/supabase.js'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
 
@@ -40,8 +40,8 @@ export default async function handler(req, res) {
         ? { customer: seller.stripe_customer_id }
         : { customer_email: user.email }),
       line_items: [{ price: selectedPlan.priceId, quantity: 1 }],
-      success_url: `${process.env.VITE_APP_URL}/seller/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url:  `${process.env.VITE_APP_URL}/seller/plans`,
+      success_url: `${appUrl(req)}/seller/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url:  `${appUrl(req)}/seller/plans`,
       metadata: { homestead_seller_id: sellerId, plan },
       subscription_data: {
         metadata: { homestead_seller_id: sellerId, plan },

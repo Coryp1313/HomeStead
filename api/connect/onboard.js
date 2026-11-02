@@ -1,5 +1,6 @@
 import Stripe from 'stripe'
-import { supabaseAdmin, getUserFromRequest, getSellerForUser } from '../_lib/supabase.js'
+import { supabaseAdmin, getUserFromRequest, getSellerForUser, appUrl } from '../_lib/supabase.js'
+import { createExpressAccount } from '../_lib/stripeAccounts.js'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
 
@@ -32,15 +33,10 @@ export default async function handler(req, res) {
     // Create the Stripe Express account once, and remember it
     let accountId = seller.stripe_account_id
     if (!accountId) {
-      const account = await stripe.accounts.create({
-        type: 'express',
-        email: user.email,
-        business_profile: { name: seller.business_name },
-        capabilities: {
-          card_payments: { requested: true },
-          transfers:     { requested: true },
-        },
-        metadata: { homestead_seller_id: seller.id },
+      const account = await createExpressAccount({
+        email:        user.email,
+        businessName: seller.business_name,
+        sellerId:     seller.id,
       })
       accountId = account.id
 
@@ -53,8 +49,8 @@ export default async function handler(req, res) {
 
     const accountLink = await stripe.accountLinks.create({
       account: accountId,
-      refresh_url: `${process.env.VITE_APP_URL}/seller/onboard/refresh`,
-      return_url:  `${process.env.VITE_APP_URL}/seller/onboard/complete`,
+      refresh_url: `${appUrl(req)}/seller/onboard/refresh`,
+      return_url:  `${appUrl(req)}/seller/onboard/complete`,
       type: 'account_onboarding',
     })
 

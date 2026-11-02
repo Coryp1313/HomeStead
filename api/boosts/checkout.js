@@ -1,5 +1,5 @@
 import Stripe from 'stripe'
-import { supabaseAdmin, getUserFromRequest, getSellerForUser } from '../_lib/supabase.js'
+import { supabaseAdmin, getUserFromRequest, getSellerForUser, appUrl } from '../_lib/supabase.js'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
 
@@ -51,8 +51,8 @@ export default async function handler(req, res) {
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       line_items: [lineItem],
-      success_url: `${process.env.VITE_APP_URL}/seller/boost/success?listing=${listingId}`,
-      cancel_url:  `${process.env.VITE_APP_URL}/`,
+      success_url: `${appUrl(req)}/seller/boost/success?listing=${listingId}`,
+      cancel_url:  `${appUrl(req)}/`,
       metadata: { listing_id: listingId, seller_id: sellerId, boost_type: boostType },
     })
 

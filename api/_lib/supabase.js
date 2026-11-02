@@ -45,3 +45,14 @@ export async function getSellerForUser(userId) {
     .maybeSingle()
   return data
 }
+
+/**
+ * The site address to send people back to after Stripe. Uses the address
+ * they came from, so test (preview) sites return to the preview, not the
+ * live site. Falls back to VITE_APP_URL.
+ */
+export function appUrl(req) {
+  const origin = req.headers.origin
+  if (origin && /^https:\/\/[a-z0-9.-]+$/i.test(origin)) return origin
+  return process.env.VITE_APP_URL
+}
