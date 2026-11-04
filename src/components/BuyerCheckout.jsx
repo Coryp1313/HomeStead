@@ -6,7 +6,7 @@
  *
  * Usage:
  *   <BuyerCheckout
- *     listing={{ id, name, price, unit, sellerAccountId }}
+ *     listing={{ id, name, price, unit }}
  *     buyerEmail="buyer@example.com"
  *     onSuccess={() => navigate('/order/success')}
  *     onClose={() => setCheckoutOpen(false)}
@@ -25,15 +25,12 @@ export default function BuyerCheckout({ listing, buyerEmail, onSuccess, onClose 
 
   useEffect(() => {
     createListingPayment({
-      listingId:       listing.id,
-      listingName:     listing.name,
-      amountCents:     Math.round(listing.price * 100),
-      sellerAccountId: listing.sellerAccountId,
+      listingId: listing.id,
       buyerEmail,
     })
       .then(({ clientSecret }) => setClientSecret(clientSecret))
       .catch(err => setLoadError(err.message))
-  }, [listing, buyerEmail])
+  }, [listing.id, buyerEmail])
 
   if (loadError) {
     return (

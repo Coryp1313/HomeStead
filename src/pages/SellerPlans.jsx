@@ -7,6 +7,7 @@
  */
 
 import { useState } from 'react'
+import { useApp } from '../context/AppContext'
 import { startSubscription, openBillingPortal } from '../lib/stripe'
 
 const PLANS = [
@@ -79,22 +80,18 @@ export default function SellerPlans() {
   const [loading, setLoading] = useState(null)
   const [error, setError]     = useState(null)
 
-  // In a real app, get sellerId and email from your auth context
-  const currentSeller = { id: 'seller_demo', email: 'seller@example.com' }
+  const { user } = useApp()
 
   async function handlePlanSelect(plan) {
-    if (!plan.key || plan.key === 'sprout') {
+    // Paid plans need a seller account first; free just needs sign-up
+    if (!plan.key || plan.key === 'sprout' || !user.seller) {
       window.location.href = '/seller/onboard'
       return
     }
     setLoading(plan.key)
     setError(null)
     try {
-      await startSubscription({
-        plan:     plan.key,
-        sellerId: currentSeller.id,
-        email:    currentSeller.email,
-      })
+      await startSubscription({ plan: plan.key })
     } catch (err) {
       setError(err.message)
       setLoading(null)
@@ -175,7 +172,7 @@ export default function SellerPlans() {
         Already subscribed?{' '}
         <button
           style={styles.portalLink}
-          onClick={() => openBillingPortal('cus_your_customer_id')}
+          onClick={() => openBillingPortal().catch(err => setError(err.message))}
         >
           Manage or cancel your plan
         </button>

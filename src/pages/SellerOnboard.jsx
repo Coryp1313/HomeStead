@@ -1,46 +1,35 @@
 /**
- * Homestead — Seller Onboarding (fixed)
+ * Homestead — Seller Onboarding
  *
- * Now saves seller info to localStorage via registerSeller() BEFORE
- * redirecting to Stripe. When Stripe sends the seller back to
- * /seller/onboard/complete, their dashboard is fully populated.
+ * Sellers must be signed in. Submitting the form creates their seller
+ * profile in the database (via /api/connect/onboard), saves their Stripe
+ * account ID, then sends them to Stripe to connect a bank account.
  */
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useApp } from '../context/AppContext'
-import { startSellerOnboarding } from '../lib/stripe'
+import { startSellerOnboarding, getSellerStatus } from '../lib/stripe'
 
 // ─── Main onboarding form ────────────────────────────────────────────────────
 
 export function SellerOnboardPage() {
-  const { registerSeller, showToast } = useApp()
-  const [form, setForm]     = useState({ name: '', businessName: '', email: '' })
+  const { user, authReady, leaveGuest } = useApp()
+  const [form, setForm]     = useState({ businessName: '', location: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError]   = useState(null)
+
+  const signedIn     = authReady && user?.id && !user.isGuest
+  const alreadySeller = !!user?.seller
 
   async function handleSubmit(e) {
     e.preventDefault()
     setLoading(true)
     setError(null)
     try {
-      const sellerId = 'seller_' + Date.now()
-
-      // ── Save seller to session BEFORE Stripe redirect ──────────────────────
-      // This is the fix for the blank dashboard. When Stripe redirects back
-      // to /seller/onboard/complete, localStorage already has the seller's info.
-      registerSeller({
-        name:            form.name,
-        email:           form.email,
-        sellerId,
-        businessName:    form.businessName,
-        stripeAccountId: null, // filled in by webhook after Stripe onboarding
-      })
-
-      // Now redirect to Stripe — this leaves the page
+      // Creates the seller profile (first time) and redirects to Stripe
       await startSellerOnboarding({
-        sellerId,
-        email:        form.email,
         businessName: form.businessName,
+        location:     form.location,
       })
     } catch (err) {
       setError(err.message)
@@ -48,40 +37,59 @@ export function SellerOnboardPage() {
     }
   }
 
+  if (!authReady) return <div style={s.page} />
+
+  if (!signedIn) {
+    return (
+      <div style={s.page}>
+        <div style={s.card}>
+          <div style={s.iconWrap}>🌾</div>
+          <h1 style={s.h1}>Start selling on Homestead</h1>
+          <p style={s.sub}>
+            First, create your free Homestead account (or log in). Then you'll come back here to set up your farm.
+          </p>
+          <button style={s.btn} onClick={() => leaveGuest('signup')}>Create free account →</button>
+          <button style={{ ...s.btn, background: 'transparent', color: '#3B6D11', border: '0.5px solid #3B6D11', marginTop: 10 }} onClick={() => leaveGuest('login')}>
+            I already have an account
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div style={s.page}>
       <div style={s.card}>
         <div style={s.iconWrap}>🌾</div>
-        <h1 style={s.h1}>Start selling on Homestead</h1>
+        <h1 style={s.h1}>{alreadySeller ? 'Connect your bank account' : 'Start selling on Homestead'}</h1>
         <p style={s.sub}>
           You'll be taken to Stripe to securely connect your bank account.
           Stripe handles all banking details — we never see your account numbers.
         </p>
 
         <form onSubmit={handleSubmit}>
-          <label style={s.label}>Your name</label>
-          <input
-            style={s.input} type="text" placeholder="e.g. Sarah Johnson"
-            value={form.name}
-            onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-            required
-          />
+          {alreadySeller ? (
+            <div style={{ fontSize: 14, marginBottom: 8 }}>
+              Selling as <strong>{user.seller.businessName}</strong> · {user.email}
+            </div>
+          ) : (
+            <>
+              <label style={s.label}>Farm or business name</label>
+              <input
+                style={s.input} type="text" placeholder="e.g. Sunridge Farm"
+                value={form.businessName}
+                onChange={e => setForm(f => ({ ...f, businessName: e.target.value }))}
+                required
+              />
 
-          <label style={s.label}>Farm or business name</label>
-          <input
-            style={s.input} type="text" placeholder="e.g. Sunridge Farm"
-            value={form.businessName}
-            onChange={e => setForm(f => ({ ...f, businessName: e.target.value }))}
-            required
-          />
-
-          <label style={s.label}>Your email address</label>
-          <input
-            style={s.input} type="email" placeholder="you@yourfarm.com"
-            value={form.email}
-            onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-            required
-          />
+              <label style={s.label}>Town</label>
+              <input
+                style={s.input} type="text" placeholder="e.g. Fort Collins, CO"
+                value={form.location}
+                onChange={e => setForm(f => ({ ...f, location: e.target.value }))}
+              />
+            </>
+          )}
 
           {error && <div style={s.error}>{error}</div>}
 
@@ -103,8 +111,12 @@ export function SellerOnboardPage() {
 // ─── Success page — Stripe redirects here after onboarding ───────────────────
 
 export function SellerOnboardComplete() {
-  // By the time the seller arrives here, localStorage already has their info
-  // thanks to registerSeller() being called before the Stripe redirect.
+  // Re-read the seller profile so the dashboard shows the connected account
+  const { refreshSeller } = useApp()
+  useEffect(() => {
+    getSellerStatus().catch(() => {}).finally(refreshSeller)
+  }, [refreshSeller])
+
   return (
     <div style={s.page}>
       <div style={s.card}>
@@ -120,7 +132,7 @@ export function SellerOnboardComplete() {
         <div style={s.nextSteps}>
           <div style={s.nextTitle}>Next steps</div>
           {[
-            { icon: '📋', text: 'Add your first listing from the Sell tab' },
+            { icon: '📋', text: 'Add your first listing from your seller dashboard (🏪)' },
             { icon: '📸', text: 'Add photos to make your listing stand out' },
             { icon: '💬', text: 'Respond to buyers within a few hours for best results' },
           ].map(step => (
@@ -146,11 +158,7 @@ export function SellerOnboardRefresh() {
     setLoading(true)
     setError(null)
     try {
-      await startSellerOnboarding({
-        sellerId:     user?.id ?? 'seller_' + Date.now(),
-        email:        user?.email ?? '',
-        businessName: user?.seller?.businessName ?? '',
-      })
+      await startSellerOnboarding({ businessName: user?.seller?.businessName })
     } catch (err) {
       setError(err.message)
       setLoading(false)

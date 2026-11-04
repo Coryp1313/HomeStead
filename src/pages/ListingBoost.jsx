@@ -6,6 +6,8 @@
  */
 
 import { useState } from 'react'
+import { useParams } from 'react-router-dom'
+import { useApp } from '../context/AppContext'
 import { purchaseListingBoost } from '../lib/stripe'
 
 const BOOST_OPTIONS = [
@@ -39,7 +41,11 @@ const BOOST_OPTIONS = [
   },
 ]
 
-export default function ListingBoost({ listingId, listingName, sellerId }) {
+export default function ListingBoost() {
+  const { listingId } = useParams()
+  const { listings }  = useApp()
+  const listingName   = listings.find(l => l.id === listingId)?.name ?? 'your listing'
+
   const [loading, setLoading] = useState(null)
   const [error, setError]     = useState(null)
 
@@ -47,7 +53,7 @@ export default function ListingBoost({ listingId, listingName, sellerId }) {
     setLoading(boostType)
     setError(null)
     try {
-      await purchaseListingBoost({ boostType, listingId, sellerId })
+      await purchaseListingBoost({ boostType, listingId })
     } catch (err) {
       setError(err.message)
       setLoading(null)

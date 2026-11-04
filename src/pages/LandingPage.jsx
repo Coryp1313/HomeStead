@@ -18,9 +18,16 @@ const PREVIEW_LISTINGS = [
   { emoji: '🍓', name: 'Small-batch jam',       seller: 'Kitchen Roots',       price: '$8',    dist: '6.3 mi', bg: '#FAECE7' },
 ]
 
-export default function LandingPage({ onEnter }) {
-  const { setUser } = useApp()
-  const [modal, setModal]     = useState(null)
+// Opens the sign-up or log-in sheet straight away for /?signup=1 or /?login=1
+function initialModal() {
+  const q = new URLSearchParams(window.location.search)
+  return q.has('signup') ? 'signup' : q.has('login') ? 'login' : null
+}
+
+export default function LandingPage() {
+  const { signUp, signIn, resetPassword, enterAsGuest } = useApp()
+  const [modal, setModal]     = useState(initialModal)
+  const [notice, setNotice]   = useState(null)
   const [form, setForm]       = useState({ name: '', email: '', password: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState(null)
@@ -33,7 +40,7 @@ export default function LandingPage({ onEnter }) {
     return () => window.removeEventListener('resize', check)
   }, [])
 
-  function field(k, v) { setForm(f => ({ ...f, [k]: v })); setError(null) }
+  function field(k, v) { setForm(f => ({ ...f, [k]: v })); setError(null); setNotice(null) }
 
   async function handleAuth(e) {
     e.preventDefault()
@@ -41,20 +48,36 @@ export default function LandingPage({ onEnter }) {
     if (!form.email.includes('@'))               { setError('Please enter a valid email address.'); setLoading(false); return }
     if (form.password.length < 6)                { setError('Password must be at least 6 characters.'); setLoading(false); return }
     if (modal === 'signup' && !form.name.trim()) { setError('Please enter your name.'); setLoading(false); return }
-    await new Promise(r => setTimeout(r, 500))
-    setUser({
-      id: 'user_' + Date.now(),
-      name: modal === 'signup' ? form.name.trim() : form.email.split('@')[0],
-      email: form.email.trim().toLowerCase(),
-      seller: null,
-    })
+    const email = form.email.trim().toLowerCase()
+    try {
+      if (modal === 'signup') {
+        const { needsConfirmation } = await signUp({ name: form.name.trim(), email, password: form.password })
+        if (needsConfirmation) {
+          setNotice(`Almost there! We sent a confirmation link to ${email}. Click it to finish creating your account.`)
+        }
+      } else {
+        await signIn({ email, password: form.password })
+      }
+      // Once signed in, the app switches to the marketplace on its own
+    } catch (err) {
+      setError(friendlyAuthError(err))
+    }
     setLoading(false)
-    onEnter()
+  }
+
+  async function handleForgotPassword() {
+    const email = form.email.trim().toLowerCase()
+    if (!email.includes('@')) { setError('Enter your email above first, then tap "Forgot password?" again.'); return }
+    try {
+      await resetPassword(email)
+      setNotice(`If ${email} has an account, we just emailed it a link to reset the password.`)
+    } catch (err) {
+      setError(friendlyAuthError(err))
+    }
   }
 
   function browseAsGuest() {
-    setUser({ id: 'guest_' + Date.now(), name: 'Guest', email: '', seller: null, isGuest: true })
-    onEnter()
+    enterAsGuest()
   }
 
   return (
@@ -318,7 +341,14 @@ export default function LandingPage({ onEnter }) {
                   style={{ width: '100%', padding: '12px 13px', borderRadius: 9, border: '0.5px solid rgba(0,0,0,.2)', fontSize: 16, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }} />
               </div>
 
+              {modal === 'login' && (
+                <div style={{ textAlign: 'right', marginTop: -4, marginBottom: 12 }}>
+                  <button type="button" onClick={handleForgotPassword} style={{ background: 'none', border: 'none', color: '#3B6D11', cursor: 'pointer', fontSize: 12, textDecoration: 'underline', fontFamily: 'inherit', padding: 0 }}>Forgot password?</button>
+                </div>
+              )}
+
               {error && <div style={{ background: '#FCEBEB', color: '#A32D2D', borderRadius: 8, padding: '9px 13px', fontSize: 13, marginBottom: 12 }}>{error}</div>}
+              {notice && <div style={{ background: '#EAF3DE', color: '#27500A', borderRadius: 8, padding: '9px 13px', fontSize: 13, marginBottom: 12, lineHeight: 1.5 }}>{notice}</div>}
 
               <button type="submit" disabled={loading}
                 style={{ width: '100%', padding: '14px', background: '#3B6D11', color: '#EAF3DE', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 500, cursor: 'pointer', marginTop: 4, fontFamily: 'inherit', opacity: loading ? .7 : 1 }}>
@@ -335,12 +365,22 @@ export default function LandingPage({ onEnter }) {
 
             <div style={{ textAlign: 'center', marginTop: 15, fontSize: 13, color: '#888' }}>
               {modal === 'login'
-                ? <>New here? <button onClick={() => { setModal('signup'); setError(null) }} style={{ background: 'none', border: 'none', color: '#3B6D11', cursor: 'pointer', fontSize: 13, textDecoration: 'underline', fontFamily: 'inherit' }}>Create an account</button></>
-                : <>Already a member? <button onClick={() => { setModal('login'); setError(null) }} style={{ background: 'none', border: 'none', color: '#3B6D11', cursor: 'pointer', fontSize: 13, textDecoration: 'underline', fontFamily: 'inherit' }}>Log in</button></>}
+                ? <>New here? <button onClick={() => { setModal('signup'); setError(null); setNotice(null) }} style={{ background: 'none', border: 'none', color: '#3B6D11', cursor: 'pointer', fontSize: 13, textDecoration: 'underline', fontFamily: 'inherit' }}>Create an account</button></>
+                : <>Already a member? <button onClick={() => { setModal('login'); setError(null); setNotice(null) }} style={{ background: 'none', border: 'none', color: '#3B6D11', cursor: 'pointer', fontSize: 13, textDecoration: 'underline', fontFamily: 'inherit' }}>Log in</button></>}
             </div>
           </div>
         </div>
       )}
     </div>
   )
+}
+
+// Turns Supabase's technical error messages into plain language
+function friendlyAuthError(err) {
+  const msg = err?.message ?? ''
+  if (/invalid login credentials/i.test(msg)) return 'That email and password don\'t match. Try again, or tap "Forgot password?".'
+  if (/email not confirmed/i.test(msg))       return 'Please click the confirmation link we emailed you first, then log in.'
+  if (/already registered/i.test(msg))        return 'There\'s already an account with that email. Try logging in instead.'
+  if (/rate limit/i.test(msg))                return 'Too many tries in a row. Please wait a minute and try again.'
+  return msg || 'Something went wrong. Please try again.'
 }

@@ -1,4 +1,5 @@
 import Stripe from 'stripe'
+import { supabaseAdmin } from '../_lib/supabase.js'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
 
@@ -43,10 +44,12 @@ export default async function handler(req, res) {
 
     case 'account.updated': {
       const account = event.data.object
-      if (account.charges_enabled) {
-        console.log(`Seller ${account.metadata?.homestead_seller_id} verified`)
-        // TODO: await db.sellers.update({ stripeAccountId: account.id }, { status: 'active' })
-      }
+      // Verified badge = Stripe has approved them to take payments
+      await supabaseAdmin
+        .from('sellers')
+        .update({ verified: !!account.charges_enabled })
+        .eq('stripe_account_id', account.id)
+      console.log(`Seller ${account.metadata?.homestead_seller_id} charges_enabled=${account.charges_enabled}`)
       break
     }
 
@@ -57,7 +60,12 @@ export default async function handler(req, res) {
       const plan     = sub.metadata?.plan
       const status   = sub.status
       console.log(`Seller ${sellerId} subscription ${status} on ${plan} plan`)
-      // TODO: await db.sellers.update({ id: sellerId }, { plan, subscriptionStatus: status })
+      if (sellerId && plan) {
+        await supabaseAdmin
+          .from('sellers')
+          .update({ plan, plan_status: status, stripe_customer_id: sub.customer })
+          .eq('id', sellerId)
+      }
       break
     }
 
@@ -65,7 +73,12 @@ export default async function handler(req, res) {
       const sub      = event.data.object
       const sellerId = sub.metadata?.homestead_seller_id
       console.log(`Seller ${sellerId} cancelled subscription`)
-      // TODO: await db.sellers.update({ id: sellerId }, { plan: 'sprout' })
+      if (sellerId) {
+        await supabaseAdmin
+          .from('sellers')
+          .update({ plan: 'sprout', plan_status: 'active' })
+          .eq('id', sellerId)
+      }
       break
     }
 
@@ -83,7 +96,10 @@ export default async function handler(req, res) {
         const days      = boost_type === 'boost_7' ? 7 : 30
         const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000)
         console.log(`Listing ${listing_id} boosted for ${days} days until ${expiresAt.toISOString()}`)
-        // TODO: await db.listings.update({ id: listing_id }, { boosted: true, boostExpiresAt: expiresAt })
+        await supabaseAdmin
+          .from('listings')
+          .update({ boosted: true, boost_expires_at: expiresAt.toISOString() })
+          .eq('id', listing_id)
       }
       break
     }

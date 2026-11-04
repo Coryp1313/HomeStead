@@ -1,33 +1,50 @@
 /**
- * Homestead — Seller Dashboard (fixed blank state)
+ * Homestead — Seller Dashboard
  *
- * Now reads from the persistent session in AppContext instead of
- * hardcoded mock data, so the dashboard is populated after sign-up.
+ * Reads the signed-in seller's profile and listings from the database.
  * Shows a helpful setup checklist when the seller is brand new.
  */
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useApp } from '../context/AppContext'
 import {
   startSubscription,
   openBillingPortal,
   openSellerDashboard,
-  purchaseListingBoost,
   startSellerOnboarding,
+  getSellerStatus,
 } from '../lib/stripe'
-import { LISTINGS_WITH_SELLER } from '../lib/data'
 
-export default function SellerDashboard({ onClose }) {
-  const { user, showToast, logout } = useApp()
+export default function SellerDashboard({ onClose, onAddListing }) {
+  const { user, showToast, logout, listings, updateListing, deleteListing, refreshSeller } = useApp()
   const [loading, setLoading] = useState(null)
 
   const seller   = user?.seller
   const isNew    = !seller
-  const hasStripe = seller?.stripeAccountId && !seller.stripeAccountId.includes('demo')
+  const hasStripe = !!seller?.stripeAccountId
+
+  // If Stripe hasn't confirmed them yet, check again each time the dashboard opens
+  useEffect(() => {
+    if (hasStripe && !seller.verified) {
+      getSellerStatus().then(st => st.chargesEnabled && refreshSeller()).catch(() => {})
+    }
+  }, [hasStripe, seller?.verified, refreshSeller])
 
   const myListings = seller
-    ? LISTINGS_WITH_SELLER.filter(l => l.sellerId === seller.id).slice(0, 4)
+    ? listings.filter(l => l.sellerId === seller.id)
     : []
+
+  async function toggleActive(l) {
+    await act('toggle_' + l.id, () => updateListing(l.id, { active: !l.active }))
+  }
+
+  async function remove(l) {
+    if (!window.confirm(`Delete "${l.name}"? This can't be undone.`)) return
+    await act('del_' + l.id, async () => {
+      await deleteListing(l.id)
+      showToast('Listing deleted', 'success')
+    })
+  }
 
   // ── Actions ─────────────────────────────────────────────────────────────────
 
@@ -75,9 +92,9 @@ export default function SellerDashboard({ onClose }) {
   // ── Setup checklist for brand new sellers ────────────────────────────────────
 
   const setupItems = [
-    { done: !!seller.stripeAccountId, label: 'Connect your bank account (Stripe)', action: () => act('onboard', () => startSellerOnboarding({ sellerId: seller.id, email: user.email, businessName: seller.businessName })), cta: 'Connect →' },
-    { done: seller.plan !== 'sprout', label: 'Choose a seller plan', action: () => window.location.href = '/seller/plans', cta: 'View plans →' },
-    { done: myListings.length > 0,   label: 'Add your first listing', action: onClose, cta: 'Go to Sell tab →' },
+    { done: seller.verified,        label: 'Connect your bank account (Stripe)', action: () => act('onboard', () => startSellerOnboarding()), cta: 'Connect →' },
+    { done: myListings.length > 0,  label: 'Add your first listing', action: onAddListing, cta: 'Add →' },
+    { done: seller.plan !== 'sprout', label: 'Choose a seller plan (optional)', action: () => window.location.href = '/seller/plans', cta: 'View plans →' },
   ]
   const setupDone = setupItems.filter(i => i.done).length
   const allDone   = setupDone === setupItems.length
@@ -145,20 +162,20 @@ export default function SellerDashboard({ onClose }) {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {seller.plan === 'sprout' && <>
-                <button style={s.upgradeBtn} disabled={loading === 'ug'} onClick={() => act('ug', () => startSubscription({ plan: 'grower', sellerId: seller.id, email: user.email }))}>
+                <button style={s.upgradeBtn} disabled={loading === 'ug'} onClick={() => act('ug', () => startSubscription({ plan: 'grower' }))}>
                   {loading === 'ug' ? 'Redirecting…' : 'Upgrade to Grower — $19/mo ↗'}
                 </button>
-                <button style={{ ...s.upgradeBtn, background: '#FAEEDA', color: '#633806' }} disabled={loading === 'uh'} onClick={() => act('uh', () => startSubscription({ plan: 'harvest', sellerId: seller.id, email: user.email }))}>
+                <button style={{ ...s.upgradeBtn, background: '#FAEEDA', color: '#633806' }} disabled={loading === 'uh'} onClick={() => act('uh', () => startSubscription({ plan: 'harvest' }))}>
                   {loading === 'uh' ? 'Redirecting…' : 'Upgrade to Harvest — $49/mo ↗'}
                 </button>
               </>}
               {seller.plan === 'grower' && <>
-                <button style={{ ...s.upgradeBtn, background: '#FAEEDA', color: '#633806' }} disabled={loading === 'uh'} onClick={() => act('uh', () => startSubscription({ plan: 'harvest', sellerId: seller.id, email: user.email }))}>
+                <button style={{ ...s.upgradeBtn, background: '#FAEEDA', color: '#633806' }} disabled={loading === 'uh'} onClick={() => act('uh', () => startSubscription({ plan: 'harvest' }))}>
                   {loading === 'uh' ? 'Redirecting…' : 'Upgrade to Harvest — $49/mo ↗'}
                 </button>
               </>}
               {seller.plan !== 'sprout' && seller.stripeCustomerId && (
-                <button style={s.grayBtn} disabled={loading === 'portal'} onClick={() => act('portal', () => openBillingPortal(seller.stripeCustomerId))}>
+                <button style={s.grayBtn} disabled={loading === 'portal'} onClick={() => act('portal', () => openBillingPortal())}>
                   {loading === 'portal' ? 'Opening…' : 'Manage or cancel plan'}
                 </button>
               )}
@@ -168,18 +185,25 @@ export default function SellerDashboard({ onClose }) {
           {/* Payouts */}
           <div style={s.section}>
             <div style={s.secTitle}>Payouts</div>
+            {hasStripe && !seller.verified && (
+              <div style={{ fontSize: 12, color: '#BA7517', marginBottom: 8, lineHeight: 1.5 }}>
+                Stripe is still checking your details, or you didn't finish their form. Buyers can't pay you until it's done.
+              </div>
+            )}
             {hasStripe ? (
               <div style={s.payoutRow}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 500 }}>Stripe Express account</div>
-                  <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>View your balance and payouts</div>
+                  <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
+                    {seller.verified ? 'View your balance and payouts' : 'Finish or check your Stripe setup'}
+                  </div>
                 </div>
-                <button style={s.greenBtnSm} disabled={loading === 'payouts'} onClick={() => act('payouts', () => openSellerDashboard(seller.stripeAccountId))}>
+                <button style={s.greenBtnSm} disabled={loading === 'payouts'} onClick={() => act('payouts', () => seller.verified ? openSellerDashboard() : startSellerOnboarding())}>
                   {loading === 'payouts' ? '…' : 'Open →'}
                 </button>
               </div>
             ) : (
-              <button style={s.upgradeBtn} disabled={loading === 'onboard'} onClick={() => act('onboard', () => startSellerOnboarding({ sellerId: seller.id, email: user.email, businessName: seller.businessName }))}>
+              <button style={s.upgradeBtn} disabled={loading === 'onboard'} onClick={() => act('onboard', () => startSellerOnboarding())}>
                 {loading === 'onboard' ? 'Redirecting…' : '⚡ Connect your bank account to receive payouts'}
               </button>
             )}
@@ -189,27 +213,36 @@ export default function SellerDashboard({ onClose }) {
           <div style={s.section}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <div style={s.secTitle}>Your listings</div>
-              <button style={{ ...s.smallBtn, fontSize: 11 }} onClick={onClose}>+ Add listing</button>
+              <button style={{ ...s.smallBtn, fontSize: 11 }} onClick={onAddListing}>+ Add listing</button>
             </div>
             {myListings.length === 0 ? (
               <div style={{ fontSize: 13, color: '#888', padding: '1rem 0' }}>
-                No listings yet. <button style={{ color: '#3B6D11', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }} onClick={onClose}>Add your first one →</button>
+                No listings yet. <button style={{ color: '#3B6D11', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }} onClick={onAddListing}>Add your first one →</button>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {myListings.map(l => (
-                  <div key={l.id} style={s.listingRow}>
-                    <span style={{ fontSize: 20 }}>{l.emoji}</span>
-                    <div style={{ flex: 1 }}>
+                  <div key={l.id} style={{ ...s.listingRow, opacity: l.active ? 1 : 0.55 }}>
+                    {l.photoUrl
+                      ? <img src={l.photoUrl} alt="" style={s.rowPhoto} />
+                      : <span style={{ fontSize: 20 }}>{l.emoji}</span>}
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 500 }}>{l.name}</div>
-                      <div style={{ fontSize: 11, color: '#888' }}>${l.price.toFixed(2)} {l.unit}</div>
+                      <div style={{ fontSize: 11, color: '#888' }}>
+                        ${l.price.toFixed(2)} {l.unit}{!l.active && ' · Hidden'}
+                      </div>
+                      <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                        <button style={s.linkBtn} disabled={loading === 'toggle_' + l.id} onClick={() => toggleActive(l)}>
+                          {l.active ? 'Hide' : 'Show'}
+                        </button>
+                        <button style={{ ...s.linkBtn, color: '#A32D2D' }} disabled={loading === 'del_' + l.id} onClick={() => remove(l)}>
+                          Delete
+                        </button>
+                      </div>
                     </div>
                     {l.boosted
                       ? <span style={s.boostedTag}>Boosted</span>
-                      : <button style={s.smallBtn} disabled={loading === 'boost_' + l.id}
-                          onClick={() => act('boost_' + l.id, () => purchaseListingBoost({ boostType: 'boost_7', listingId: l.id, sellerId: seller.id }))}>
-                          {loading === 'boost_' + l.id ? '…' : '⚡ Boost'}
-                        </button>
+                      : <a style={{ ...s.smallBtn, textDecoration: 'none' }} href={`/seller/boost/${l.id}`}>⚡ Boost</a>
                     }
                   </div>
                 ))}
@@ -231,7 +264,7 @@ export default function SellerDashboard({ onClose }) {
           </div>
 
           {/* Sign out */}
-          <button style={{ ...s.grayBtn, marginTop: 8, color: '#A32D2D' }} onClick={() => { logout(); onClose() }}>
+          <button style={{ ...s.grayBtn, marginTop: 8, color: '#A32D2D' }} onClick={async () => { await logout(); onClose() }}>
             Sign out
           </button>
 
@@ -261,5 +294,7 @@ const s = {
   greenBtnSm: { padding: '7px 12px', background: '#3B6D11', color: '#EAF3DE', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
   payoutRow:  { background: '#f8f8f5', borderRadius: 10, padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   listingRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: '#f8f8f5', borderRadius: 8 },
+  rowPhoto:   { width: 36, height: 36, borderRadius: 6, objectFit: 'cover', flexShrink: 0 },
+  linkBtn:    { background: 'none', border: 'none', padding: 0, fontSize: 11, color: '#3B6D11', cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline' },
   boostedTag: { fontSize: 10, padding: '3px 9px', borderRadius: 999, background: '#EEEDFE', color: '#534AB7', fontWeight: 500 },
 }

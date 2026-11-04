@@ -2,8 +2,8 @@
  * Homestead — App Entry Point
  *
  * Routing logic:
- *   - New visitors (no localStorage session) → LandingPage with login/signup
- *   - Returning users (session exists) → Marketplace directly
+ *   - New visitors (not signed in) → LandingPage with login/signup
+ *   - Signed-in members and guests → Marketplace directly
  *   - All Stripe redirect routes always accessible
  */
 
@@ -22,15 +22,24 @@ import {
 // ── Route guard — shows landing to logged-out visitors ────────────────────────
 
 function HomeRoute() {
-  const { user } = useApp()
-  const isLoggedIn = user?.id && user.id !== null
+  const { user, authReady } = useApp()
 
-  if (isLoggedIn) {
+  // Wait until we know whether someone is already signed in
+  if (!authReady) return <Loading />
+
+  if (user?.id) {
     return <Marketplace />
   }
 
-  // Pass onEnter so LandingPage can trigger navigation after login
-  return <LandingPage onEnter={() => window.location.replace('/')} />
+  return <LandingPage />
+}
+
+function Loading() {
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32 }}>
+      🌾
+    </div>
+  )
 }
 
 // ── Shared success screen styles ──────────────────────────────────────────────
@@ -69,13 +78,7 @@ export default function App() {
           <Route path="/seller/plans" element={<SellerPlans />} />
 
           {/* ── Listing boosts ── */}
-          <Route path="/seller/boost/:listingId" element={
-            <ListingBoost
-              listingId="listing_demo"
-              listingName="Farm-fresh brown eggs"
-              sellerId="seller_sunridge"
-            />
-          } />
+          <Route path="/seller/boost/:listingId" element={<ListingBoost />} />
 
           {/* ── Post-payment success screens ── */}
           <Route path="/seller/subscription/success" element={
