@@ -148,7 +148,7 @@ create table if not exists public.orders (
   listing_id                uuid references public.listings(id) on delete set null,
   stripe_payment_intent_id  text not null unique,
   listing_name              text not null,
-  listing_emoji             text not null default '🌾',
+  listing_emoji             text not null default '',
   unit                      text not null default 'each',
   amount                    numeric(10,2) not null,
   platform_fee              numeric(10,2) not null default 0,
