@@ -8,7 +8,7 @@
  *   <BuyerCheckout
  *     listing={{ id, name, price, unit }}
  *     buyerEmail="buyer@example.com"
- *     onSuccess={() => navigate('/order/success')}
+ *     onSuccess={(paymentIntentId) => ...}
  *     onClose={() => setCheckoutOpen(false)}
  *   />
  */
@@ -21,16 +21,17 @@ import { stripePromise, createListingPayment } from '../lib/stripe'
 
 export default function BuyerCheckout({ listing, buyerEmail, onSuccess, onClose }) {
   const [clientSecret, setClientSecret] = useState(null)
+  const [feePercent, setFeePercent]     = useState(5)
   const [loadError, setLoadError]       = useState(null)
 
   useEffect(() => {
-    createListingPayment({
-      listingId: listing.id,
-      buyerEmail,
-    })
-      .then(({ clientSecret }) => setClientSecret(clientSecret))
+    createListingPayment({ listingId: listing.id })
+      .then(({ clientSecret, feePercent }) => {
+        setFeePercent(feePercent ?? 5)
+        setClientSecret(clientSecret)
+      })
       .catch(err => setLoadError(err.message))
-  }, [listing.id, buyerEmail])
+  }, [listing.id])
 
   if (loadError) {
     return (
@@ -80,6 +81,7 @@ export default function BuyerCheckout({ listing, buyerEmail, onSuccess, onClose 
           <CheckoutForm
             listing={listing}
             buyerEmail={buyerEmail}
+            feePercent={feePercent}
             onSuccess={onSuccess}
             onClose={onClose}
           />
@@ -91,7 +93,7 @@ export default function BuyerCheckout({ listing, buyerEmail, onSuccess, onClose 
 
 // ─── Inner form — runs inside <Elements> so it can use useStripe() ────────────
 
-function CheckoutForm({ listing, buyerEmail, onSuccess, onClose }) {
+function CheckoutForm({ listing, buyerEmail, feePercent, onSuccess, onClose }) {
   const stripe   = useStripe()
   const elements = useElements()
 
@@ -105,7 +107,7 @@ function CheckoutForm({ listing, buyerEmail, onSuccess, onClose }) {
     setSubmitting(true)
     setError(null)
 
-    const { error: stripeError } = await stripe.confirmPayment({
+    const { error: stripeError, paymentIntent } = await stripe.confirmPayment({
       elements,
       confirmParams: {
         return_url:      `${window.location.origin}/order/success`,
@@ -123,12 +125,12 @@ function CheckoutForm({ listing, buyerEmail, onSuccess, onClose }) {
       setSubmitting(false)
     } else {
       // Payment succeeded
-      onSuccess()
+      onSuccess(paymentIntent?.id)
     }
   }
 
-  const platformFee = (listing.price * 0.05).toFixed(2)
-  const sellerGets  = (listing.price * 0.95).toFixed(2)
+  const platformFee = (listing.price * feePercent / 100).toFixed(2)
+  const sellerGets  = (listing.price - Number(platformFee)).toFixed(2)
 
   return (
     <form onSubmit={handleSubmit}>
@@ -149,10 +151,12 @@ function CheckoutForm({ listing, buyerEmail, onSuccess, onClose }) {
           <span style={{ fontSize: 13 }}>{listing.name}</span>
           <span style={{ fontSize: 13, fontWeight: 500 }}>${listing.price.toFixed(2)}</span>
         </div>
-        <div style={{ ...styles.summaryRow, color: '#888', fontSize: 12 }}>
-          <span>Platform fee (5%)</span>
-          <span>${platformFee}</span>
-        </div>
+        {feePercent > 0 && (
+          <div style={{ ...styles.summaryRow, color: '#888', fontSize: 12 }}>
+            <span>Platform fee ({feePercent}%)</span>
+            <span>${platformFee}</span>
+          </div>
+        )}
         <div style={{ ...styles.summaryRow, color: '#888', fontSize: 12 }}>
           <span>Goes to seller</span>
           <span>${sellerGets}</span>

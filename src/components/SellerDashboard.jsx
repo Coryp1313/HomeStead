@@ -16,7 +16,7 @@ import {
 } from '../lib/stripe'
 
 export default function SellerDashboard({ onClose, onAddListing }) {
-  const { user, showToast, logout, listings, updateListing, deleteListing, refreshSeller } = useApp()
+  const { user, showToast, logout, listings, updateListing, deleteListing, refreshSeller, sellerOrders, markPickedUp, reloadOrders } = useApp()
   const [loading, setLoading] = useState(null)
 
   const seller   = user?.seller
@@ -29,6 +29,21 @@ export default function SellerDashboard({ onClose, onAddListing }) {
       getSellerStatus().then(st => st.chargesEnabled && refreshSeller()).catch(() => {})
     }
   }, [hasStripe, seller?.verified, refreshSeller])
+
+  // Fresh orders each time the dashboard opens
+  useEffect(() => { reloadOrders() }, [reloadOrders])
+
+  const toHandOver  = sellerOrders.filter(o => o.status === 'paid')
+  const monthStart  = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+  const monthOrders = sellerOrders.filter(o => o.status !== 'refunded' && new Date(o.createdAt) >= monthStart)
+  const monthEarned = monthOrders.reduce((sum, o) => sum + o.amount - o.platformFee, 0)
+
+  async function pickedUp(o) {
+    await act('pick_' + o.id, async () => {
+      await markPickedUp(o.id)
+      showToast('Marked as picked up', 'success')
+    })
+  }
 
   const myListings = seller
     ? listings.filter(l => l.sellerId === seller.id)
@@ -250,11 +265,41 @@ export default function SellerDashboard({ onClose, onAddListing }) {
             )}
           </div>
 
+          {/* Orders waiting for pickup */}
+          <div style={s.section}>
+            <div style={s.secTitle}>Orders to hand over ({toHandOver.length})</div>
+            {toHandOver.length === 0 ? (
+              <div style={{ fontSize: 13, color: '#888' }}>
+                No open orders. When someone buys from you, it shows up here.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {toHandOver.map(o => (
+                  <div key={o.id} style={s.listingRow}>
+                    <span style={{ fontSize: 20 }}>{o.listing.emoji}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500 }}>{o.listing.name}</div>
+                      <div style={{ fontSize: 11, color: '#888' }}>
+                        ${o.amount.toFixed(2)} · {new Date(o.createdAt).toLocaleDateString()}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#555', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {o.buyerName || 'Buyer'}{o.buyerEmail && <> · <a href={`mailto:${o.buyerEmail}`} style={{ color: '#3B6D11' }}>{o.buyerEmail}</a></>}
+                      </div>
+                    </div>
+                    <button style={s.greenBtnSm} disabled={loading === 'pick_' + o.id} onClick={() => pickedUp(o)}>
+                      Picked up ✓
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Stats */}
           <div style={s.section}>
             <div style={s.secTitle}>This month</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-              {[['0', 'Orders'], ['$0', 'Revenue'], ['—', 'Rating']].map(([v, l]) => (
+              {[[String(monthOrders.length), 'Orders'], ['$' + monthEarned.toFixed(2), 'You earned'], ['—', 'Rating']].map(([v, l]) => (
                 <div key={l} style={{ background: '#f8f8f5', borderRadius: 9, padding: '10px 12px' }}>
                   <div style={{ fontSize: 18, fontWeight: 500 }}>{v}</div>
                   <div style={{ fontSize: 11, color: '#888' }}>{l}</div>

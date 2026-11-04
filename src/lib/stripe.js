@@ -89,12 +89,20 @@ export async function openBillingPortal() {
 
 /**
  * Create a PaymentIntent for a buyer purchasing a listing.
- * Returns { clientSecret } which you pass to Stripe Elements to collect
+ * Returns { clientSecret, feePercent }. clientSecret goes to Stripe Elements, which collects
  * card details without the card number ever touching your server.
  */
-export async function createListingPayment({ listingId, buyerEmail }) {
-  // The server looks up the price and seller itself
-  return apiPost('/checkout/create', { listingId, buyerEmail })
+export async function createListingPayment({ listingId }) {
+  // The server looks up the price, seller and buyer itself
+  return apiPost('/checkout/create', { listingId })
+}
+
+/**
+ * Tell the server a payment went through so it saves the order.
+ * (The Stripe webhook saves it too, in case this call never arrives.)
+ */
+export async function confirmOrder(paymentIntentId) {
+  return apiPost('/orders/confirm', { paymentIntentId })
 }
 
 // ─── Listing boosts ───────────────────────────────────────────────────────────

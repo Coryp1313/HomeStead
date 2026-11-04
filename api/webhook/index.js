@@ -1,5 +1,6 @@
 import Stripe from 'stripe'
 import { supabaseAdmin } from '../_lib/supabase.js'
+import { recordPaidOrder } from '../_lib/orders.js'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
 
@@ -85,7 +86,7 @@ export default async function handler(req, res) {
     case 'payment_intent.succeeded': {
       const pi = event.data.object
       console.log(`Payment succeeded: $${(pi.amount / 100).toFixed(2)} for "${pi.metadata?.listing_name}"`)
-      // TODO: await db.orders.create({ listingId: pi.metadata?.listing_id, amount: pi.amount })
+      await recordPaidOrder(pi)
       break
     }
 

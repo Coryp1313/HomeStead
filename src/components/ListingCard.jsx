@@ -37,10 +37,10 @@ export default function ListingCard({ listing }) {
     setCheckoutOpen(true)
   }
 
-  function handleSuccess() {
+  function handleSuccess(paymentIntentId) {
     setCheckoutOpen(false)
     setOrdered(true)
-    addOrder(listing)
+    addOrder(listing, paymentIntentId)
     showToast(`Order placed — message ${listing.seller?.name} to arrange pickup`, 'success')
   }
 
