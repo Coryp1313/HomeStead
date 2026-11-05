@@ -18,6 +18,7 @@ import CartSidebar from '../components/CartSidebar'
 import SellerDashboard from '../components/SellerDashboard'
 import NotificationPanel from '../components/NotificationPanel'
 import AddListing from '../components/AddListing'
+import { ORDER_STATUS } from '../lib/supabase'
 
 const CATEGORIES = [
   { key: 'all',      label: 'All goods',     icon: '▦' },
@@ -363,10 +364,11 @@ export default function Marketplace() {
                       <div style={{ fontSize: 13, fontWeight: 500 }}>{order.listing.name}</div>
                       <div style={{ fontSize: 11, color: '#888' }}>
                         {order.listing.seller?.name} · ${order.listing.price.toFixed(2)} {order.listing.unit}
+                        {' · '}{new Date(order.createdAt).toLocaleDateString()}
                       </div>
                     </div>
                     <span style={s.orderStatus}>
-                      {order.status === 'awaiting_pickup' ? '🟡 Awaiting pickup' : '✅ Picked up'}
+                      {ORDER_STATUS[order.status] ?? order.status}
                     </span>
                   </div>
                 ))}
@@ -475,7 +477,7 @@ export default function Marketplace() {
                     <div style={{ fontSize: 11, color: '#888' }}>{order.listing.seller?.name} · ${order.listing.price.toFixed(2)}</div>
                   </div>
                   <span style={s.orderStatus}>
-                    {order.status === 'awaiting_pickup' ? '🟡 Pickup pending' : '✅ Done'}
+                    {ORDER_STATUS[order.status] ?? order.status}
                   </span>
                 </div>
               ))}

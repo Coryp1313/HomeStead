@@ -14,10 +14,9 @@ export default function CartSidebar({ open, onClose }) {
   const { cart, removeFromCart, addOrder, showToast, user } = useApp()
   const [checkoutItem, setCheckoutItem] = useState(null)
 
-  function handleItemSuccess(listing) {
+  function handleItemSuccess(listing, paymentIntentId) {
     setCheckoutItem(null)
-    addOrder(listing)
-    removeFromCart(listing.id)
+    addOrder(listing, paymentIntentId)
     showToast(`Order placed — message ${listing.seller?.name} to arrange pickup!`, 'success')
   }
 
@@ -97,7 +96,7 @@ export default function CartSidebar({ open, onClose }) {
         <BuyerCheckout
           listing={checkoutItem}
           buyerEmail={user.email}
-          onSuccess={() => handleItemSuccess(checkoutItem)}
+          onSuccess={(piId) => handleItemSuccess(checkoutItem, piId)}
           onClose={() => setCheckoutItem(null)}
         />
       )}

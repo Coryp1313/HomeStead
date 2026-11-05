@@ -7,7 +7,9 @@
  *   - All Stripe redirect routes always accessible
  */
 
+import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { confirmOrder } from './lib/stripe'
 import { AppProvider, useApp } from './context/AppContext'
 import LandingPage   from './pages/LandingPage'
 import Marketplace   from './pages/Marketplace'
@@ -18,6 +20,16 @@ import {
   SellerOnboardComplete,
   SellerOnboardRefresh,
 } from './pages/SellerOnboard'
+
+// Some payment methods send the buyer away to their bank and back here with
+// ?payment_intent=pi_... in the address. Save the order when they return.
+function SaveReturnedOrder() {
+  useEffect(() => {
+    const pi = new URLSearchParams(window.location.search).get('payment_intent')
+    if (pi) confirmOrder(pi).catch(err => console.error('Could not confirm order:', err))
+  }, [])
+  return null
+}
 
 // ── Route guard — shows landing to logged-out visitors ────────────────────────
 
@@ -105,6 +117,7 @@ export default function App() {
 
           <Route path="/order/success" element={
             <div style={success}>
+              <SaveReturnedOrder />
               <div style={{ fontSize: 52 }}>✅</div>
               <h2 style={{ fontWeight: 500, fontSize: 20 }}>Order placed!</h2>
               <p style={{ color: '#666', fontSize: 14 }}>

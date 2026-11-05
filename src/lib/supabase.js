@@ -121,3 +121,39 @@ export async function uploadListingPhoto(userId, file) {
   if (error) throw error
   return supabase.storage.from('listing-photos').getPublicUrl(path).data.publicUrl
 }
+
+/**
+ * Orders: the buyer sees their own, a seller sees orders for their farm.
+ * Turned into the shape the order lists use (order.listing.name, etc.).
+ */
+export const ORDER_SELECT = '*, seller:sellers(business_name)'
+
+export function toOrder(row) {
+  const amount = Number(row.amount)
+  return {
+    id:          row.id,
+    buyerId:     row.buyer_id,
+    sellerId:    row.seller_id,
+    status:      row.status,            // 'paid' | 'picked_up' | 'refunded'
+    createdAt:   row.created_at,
+    pickedUpAt:  row.picked_up_at,
+    buyerName:   row.buyer_name,
+    buyerEmail:  row.buyer_email,
+    amount,
+    platformFee: Number(row.platform_fee),
+    listing: {
+      id:     row.listing_id,
+      name:   row.listing_name,
+      emoji:  row.listing_emoji,
+      unit:   row.unit,
+      price:  amount,
+      seller: { name: row.seller?.business_name ?? 'Seller' },
+    },
+  }
+}
+
+export const ORDER_STATUS = {
+  paid:      '🟡 Awaiting pickup',
+  picked_up: '✅ Picked up',
+  refunded:  '↩️ Refunded',
+}

@@ -4,12 +4,13 @@
  * Accounts and listings now live in Supabase (see supabase/schema.sql).
  * Supabase keeps people signed in across visits on its own.
  *
- * Cart, orders and notifications are still kept in this browser's
- * localStorage for now.
+ * Orders are saved in Supabase by our server once Stripe confirms payment.
+ * Cart and notifications are still kept in this browser's localStorage.
  */
 
 import { createContext, useContext, useState, useCallback, useEffect } from 'react'
-import { supabase, toListing, toSeller, LISTING_SELECT, explainLoadError, supabaseHost } from '../lib/supabase'
+import { supabase, toListing, toSeller, toOrder, LISTING_SELECT, ORDER_SELECT, explainLoadError, supabaseHost } from '../lib/supabase'
+import { confirmOrder } from '../lib/stripe'
 
 const AppContext = createContext(null)
 
@@ -49,8 +50,9 @@ export function AppProvider({ children }) {
   // Cart — persisted so items survive refresh
   const [cart, setCartRaw] = useState(() => load('cart', []))
 
-  // Orders — persisted
-  const [orders, setOrdersRaw] = useState(() => load('orders', []))
+  // Orders from the database: ones this person bought, and (for sellers)
+  // ones placed with their farm
+  const [orderRows, setOrderRows] = useState([])
 
   // Notifications — persisted
   const [notifications, setNotificationsRaw] = useState(() => load('notifications', []))
@@ -67,13 +69,6 @@ export function AppProvider({ children }) {
     setCartRaw(prev => {
       const next = typeof fn === 'function' ? fn(prev) : fn
       save('cart', next)
-      return next
-    })
-  }
-  function setOrders(fn) {
-    setOrdersRaw(prev => {
-      const next = typeof fn === 'function' ? fn(prev) : fn
-      save('orders', next)
       return next
     })
   }
@@ -178,7 +173,7 @@ export function AppProvider({ children }) {
     clear('notifications')
     setUser(SIGNED_OUT)
     setCartRaw([])
-    setOrdersRaw([])
+    setOrderRows([])
     setNotificationsRaw([])
   }, [])
 
@@ -259,17 +254,45 @@ export function AppProvider({ children }) {
 
   const clearCart = useCallback(() => setCart([]), [])
 
-  // ── Order helpers ───────────────────────────────────────────────────────────
+  // ── Orders ──────────────────────────────────────────────────────────────────
 
-  const addOrder = useCallback((listing) => {
-    const order = {
-      id:        `order_${Date.now()}`,
-      listing,
-      status:    'awaiting_pickup',
-      createdAt: new Date().toISOString(),
+  const signedIn = !!user.id && !user.isGuest
+
+  const reloadOrders = useCallback(async () => {
+    if (!signedIn) { setOrderRows([]); return }
+    const { data, error } = await supabase
+      .from('orders')
+      .select(ORDER_SELECT)
+      .order('created_at', { ascending: false })
+    if (error) { console.error('Could not load orders:', error); return }
+    setOrderRows(data.map(toOrder))
+  }, [signedIn])
+
+  useEffect(() => { reloadOrders() }, [reloadOrders, user.id])
+
+  const orders       = orderRows.filter(o => o.buyerId === user.id)
+  const sellerOrders = user.seller ? orderRows.filter(o => o.sellerId === user.seller.id) : []
+
+  /** Seller hands the goods over */
+  const markPickedUp = useCallback(async (orderId) => {
+    const { error } = await supabase
+      .from('orders')
+      .update({ status: 'picked_up', picked_up_at: new Date().toISOString() })
+      .eq('id', orderId)
+    if (error) throw error
+    await reloadOrders()
+  }, [reloadOrders])
+
+  /** Called after a successful payment. The server saves the order. */
+  const addOrder = useCallback(async (listing, paymentIntentId) => {
+    removeFromCart(listing.id)
+    try {
+      if (paymentIntentId) await confirmOrder(paymentIntentId)
+    } catch (err) {
+      // The Stripe webhook will still save it
+      console.error('Could not confirm order:', err)
     }
-    setOrders(o => [order, ...o])
-    clearCart()
+    await reloadOrders()
     // Add a notification for the buyer
     addNotification({
       type:    'order',
@@ -277,7 +300,7 @@ export function AppProvider({ children }) {
       message: `Your order for ${listing.name} from ${listing.seller?.name} is confirmed. Message them to arrange pickup.`,
       listingId: listing.id,
     })
-  }, [clearCart])
+  }, [removeFromCart, reloadOrders])
 
   // ── Notification helpers ────────────────────────────────────────────────────
 
@@ -314,7 +337,7 @@ export function AppProvider({ children }) {
       listings, listingsLoading, listingsError, reloadListings,
       addListing, updateListing, deleteListing,
       cart, addToCart, removeFromCart, clearCart,
-      orders, addOrder,
+      orders, sellerOrders, addOrder, reloadOrders, markPickedUp,
       notifications, addNotification, markAllRead, unreadCount,
       toast, showToast,
     }}>

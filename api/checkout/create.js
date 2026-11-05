@@ -1,5 +1,5 @@
 import Stripe from 'stripe'
-import { supabaseAdmin } from '../_lib/supabase.js'
+import { supabaseAdmin, getUserFromRequest } from '../_lib/supabase.js'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
 
@@ -12,13 +12,16 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { listingId, buyerEmail } = req.body
+    const user = await getUserFromRequest(req)
+    if (!user) return res.status(401).json({ error: 'Please log in to buy.' })
+
+    const { listingId } = req.body || {}
 
     // Look up the price and seller ourselves, so nobody can change the
     // price or payout account from their browser.
     const { data: listing, error } = await supabaseAdmin
       .from('listings')
-      .select('id, name, price, active, is_sample, seller:sellers(id, stripe_account_id, plan, plan_status)')
+      .select('id, name, price, unit, emoji, active, is_sample, seller:sellers(id, stripe_account_id, plan, plan_status)')
       .eq('id', listingId)
       .maybeSingle()
     if (error) throw error
@@ -33,6 +36,9 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'This seller hasn\'t finished setting up payouts yet.' })
     }
 
+    const { data: profile } = await supabaseAdmin
+      .from('profiles').select('name').eq('id', user.id).maybeSingle()
+
     const amountCents      = Math.round(Number(listing.price) * 100)
     const paidPlanActive   = ['active', 'trialing'].includes(listing.seller.plan_status)
     const feePercent       = paidPlanActive ? (PLATFORM_FEE_PERCENT[listing.seller.plan] ?? 5) : 5
@@ -41,7 +47,7 @@ export default async function handler(req, res) {
     const paymentIntent = await stripe.paymentIntents.create({
       amount:   amountCents,
       currency: 'usd',
-      receipt_email: buyerEmail,
+      receipt_email: user.email,
       transfer_data: {
         destination: listing.seller.stripe_account_id,
       },
@@ -50,10 +56,14 @@ export default async function handler(req, res) {
         listing_id:   listing.id,
         listing_name: listing.name,
         seller_id:    listing.seller.id,
+        listing_emoji: listing.emoji,
+        unit:          listing.unit,
+        buyer_id:      user.id,
+        buyer_name:    (profile?.name || '').slice(0, 200),
       },
     })
 
-    res.status(200).json({ clientSecret: paymentIntent.client_secret })
+    res.status(200).json({ clientSecret: paymentIntent.client_secret, feePercent })
   } catch (err) {
     console.error('Checkout error:', err)
     res.status(500).json({ error: err.message })
