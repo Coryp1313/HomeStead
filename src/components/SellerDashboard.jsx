@@ -14,6 +14,7 @@ import {
   startSellerOnboarding,
   getSellerStatus,
 } from '../lib/stripe'
+import { listingLimit } from '../lib/plans'
 
 export default function SellerDashboard({ onClose, onAddListing }) {
   const { user, showToast, logout, listings, updateListing, deleteListing, refreshSeller, sellerOrders, markPickedUp, reloadOrders } = useApp()
@@ -48,6 +49,8 @@ export default function SellerDashboard({ onClose, onAddListing }) {
   const myListings = seller
     ? listings.filter(l => l.sellerId === seller.id)
     : []
+  const limit       = listingLimit(seller)
+  const activeCount = myListings.filter(l => l.active).length
 
   async function toggleActive(l) {
     await act('toggle_' + l.id, () => updateListing(l.id, { active: !l.active }))
@@ -227,9 +230,17 @@ export default function SellerDashboard({ onClose, onAddListing }) {
           {/* Listings */}
           <div style={s.section}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <div style={s.secTitle}>Your listings</div>
+              <div style={s.secTitle}>
+                Your listings
+                {limit !== Infinity && <span style={{ fontWeight: 400 }}> · {activeCount} of {limit} active</span>}
+              </div>
               <button style={{ ...s.smallBtn, fontSize: 11 }} onClick={onAddListing}>+ Add listing</button>
             </div>
+            {activeCount >= limit && (
+              <div style={{ fontSize: 12, color: '#633806', background: '#FAEEDA', borderRadius: 8, padding: '8px 10px', marginBottom: 8 }}>
+                You're at your plan's limit. Hide a listing to add another, or <a href="/seller/plans" style={{ color: '#633806' }}>upgrade for more</a>.
+              </div>
+            )}
             {myListings.length === 0 ? (
               <div style={{ fontSize: 13, color: '#888', padding: '1rem 0' }}>
                 No listings yet. <button style={{ color: '#3B6D11', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }} onClick={onAddListing}>Add your first one →</button>
