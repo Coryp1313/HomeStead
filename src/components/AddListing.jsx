@@ -9,6 +9,7 @@
 import { useState } from 'react'
 import { useApp } from '../context/AppContext'
 import { uploadListingPhoto } from '../lib/supabase'
+import { listingLimit } from '../lib/plans'
 
 const CATEGORIES = [
   { key: 'eggs',      label: 'Eggs',      emoji: '🥚', bg: 'bg-amber' },
@@ -22,7 +23,7 @@ const CATEGORIES = [
 const UNITS = ['per dozen', 'per lb', 'per jar', 'per pint', 'per quart', 'per bundle', 'per piece', 'each']
 
 export default function AddListing({ onClose }) {
-  const { user, addListing, showToast } = useApp()
+  const { user, listings, addListing, showToast } = useApp()
 
   const [form, setForm] = useState({
     name: '', category: 'eggs', price: '', unit: 'per dozen', description: '', tags: '',
@@ -31,6 +32,32 @@ export default function AddListing({ onClose }) {
   const [preview, setPreview] = useState(null)   // object URL for the preview
   const [saving, setSaving]   = useState(false)
   const [error, setError]     = useState(null)
+
+  const limit       = listingLimit(user.seller)
+  const activeCount = listings.filter(l => l.sellerId === user.seller?.id && l.active).length
+
+  if (user.seller && activeCount >= limit) {
+    return (
+      <div style={s.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
+        <div style={s.card}>
+          <div style={s.hd}>
+            <div style={{ fontSize: 17, fontWeight: 500 }}>You've reached your listing limit</div>
+            <button type="button" style={s.xBtn} onClick={onClose} aria-label="Close">✕</button>
+          </div>
+          <p style={{ fontSize: 14, color: '#444', lineHeight: 1.6, margin: '0 0 8px' }}>
+            Your plan allows {limit} active listings, and you have {activeCount}.
+            Hide or delete one from your seller dashboard, or upgrade to list more.
+          </p>
+          <p style={{ fontSize: 13, color: '#888', margin: '0 0 4px' }}>
+            Grower: 25 listings, 0% fees · Harvest: unlimited listings
+          </p>
+          <a href="/seller/plans" style={{ ...s.saveBtn, display: 'block', textAlign: 'center', textDecoration: 'none', boxSizing: 'border-box' }}>
+            See plans →
+          </a>
+        </div>
+      </div>
+    )
+  }
 
   function field(k, v) { setForm(f => ({ ...f, [k]: v })); setError(null) }
 
